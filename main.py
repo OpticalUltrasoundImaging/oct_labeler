@@ -54,10 +54,11 @@ class OctData:
     imgs: np.ndarray  # ref to image array
     labels: list[Labels]  # [[((10, 20), "normal")]]
 
-    def save_labels(self):
+    def save_labels(self) -> Path:
         label_path = self.get_label_fname_from_img_path(self.path)
         with open(label_path, "wb") as fp:
             pickle.dump(self.labels, fp)
+        return label_path
 
     def load_labels(self):
         label_path = self.get_label_fname_from_img_path(self.path)
@@ -96,10 +97,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         ### Second horizontal layout
         self.time_dec_btn = QtWidgets.QPushButton("<", self)
         self.time_inc_btn = QtWidgets.QPushButton(">", self)
+        def _save_labels():
+            if self.oct_data:
+                label_path = self.oct_data.save_labels()
+                msg = f"Saved labels to {label_path}"
+                self.status_msg(msg)
         self.save_label_btn = QtWidgets.QPushButton("Save labels", self)
-        self.save_label_btn.clicked.connect(
-            lambda: self.oct_data and self.oct_data.save_labels()
-        )
+        self.save_label_btn.clicked.connect(_save_labels)
         self.remove_label_btn = QtWidgets.QPushButton("Remove last touched label", self)
         self.add_label_btn = QtWidgets.QPushButton("Add label", self)
         self.add_label_btn.clicked.connect(self._add_label)
@@ -170,6 +174,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             # self._disp_image()
 
     def status_msg(self, msg: str):
+        print(msg)
         self.statusBar().showMessage(msg)
 
     @QtCore.Slot()
@@ -188,7 +193,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         try:
             self.oct_data = self._load_oct_data(self.fname)
             if self.oct_data:
+                # show images
                 self._disp_image()
+                # create LinearRegionItem if labels 
+                self._imv_update_linear_regions_from_labels()
         except Exception as e:
             print(e)
             self.error_dialog("Unknown exception while reading file. Check logs.")
@@ -216,6 +224,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             return None
 
         oct_data = OctData(path=fname, mat=mat, imgs=scans, labels=[None] * len(scans))
+
+        # try to load labels if they exist
+        try:
+            oct_data.load_labels()
+        except FileNotFoundError:
+            pass
+
         return oct_data
 
     def _disp_image(self):

@@ -274,6 +274,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         self.imv_region2label[lri] = label
         self.imv_region2textItem[lri] = ti
+        self.curr_label_region = lri
 
     @QtCore.Slot()
     def _imv_time_changed(self, ind, _):

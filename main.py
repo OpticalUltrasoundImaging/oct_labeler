@@ -165,11 +165,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.status_msg("Ready")
 
         ### Debug use
-        self.oct_data = self._load_oct_data(
-            "c:/users/tnie/box/oct invivo/10 polyps a & b/raw_data_image_polypa_cut_aligned.mat"
-        )
-        if self.oct_data:
-            self._disp_image()
+        # self.oct_data = self._load_oct_data("~/box/oct invivo/10 polyps a & b/raw_data_image_polypa_cut_aligned.mat")
+        # if self.oct_data:
+            # self._disp_image()
 
     def status_msg(self, msg: str):
         self.statusBar().showMessage(msg)
@@ -187,13 +185,17 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.status_msg(f"Loading {self.fname}")
         self.repaint()  # force render the status message
         QtWidgets.QApplication.setOverrideCursor(QtGui.Qt.WaitCursor)
-
-        self.oct_data = self._load_oct_data(self.fname)
-        if self.oct_data:
-            self._disp_image()
-
+        try:
+            self.oct_data = self._load_oct_data(self.fname)
+            if self.oct_data:
+                self._disp_image()
+        except Exception as e:
+            print(e)
+            self.error_dialog("Unknown exception while reading file. Check logs.")
+            self.status_msg(f"Failed to load {self.fname}")
+        else:
+            self.status_msg(f"Loaded {self.fname}")
         QtWidgets.QApplication.restoreOverrideCursor()
-        self.status_msg(f"Loaded {self.fname}")
 
     def _load_oct_data(self, fname: str | Path) -> OctData | None:
         fname = Path(fname)
@@ -201,7 +203,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         mat = sio.loadmat(fname)
         keys = [s for s in mat.keys() if not s.startswith("__")]
 
-        print(keys)
+        print(f"Available keys in data file: {keys}")
         key = "I_updated"
         if key in keys:
             scans = mat[key]
@@ -214,7 +216,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             return None
 
         oct_data = OctData(path=fname, mat=mat, imgs=scans, labels=[None] * len(scans))
-        oct_data
         return oct_data
 
     def _disp_image(self):
@@ -223,7 +224,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     @QtCore.Slot()
     def _add_label(self, rgn: tuple[int, int] | None = None, label: str | None = None):
-        viewbox = self.imv.getView()
+        if not self.oct_data:
+            return
+
         x_max = self.oct_data.imgs.shape[-1]
 
         if rgn is None:
@@ -233,6 +236,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             label = self.label_combo_box.currentText()
 
         print(f"_add_label {rgn=} {label=}")
+
+        viewbox = self.imv.getView()
 
         # add LinearRegionItem to represent label region
         lri = LinearRegionItemClickable(
@@ -257,6 +262,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         """
         callback for when ImageView's time changes (moved to a new image)
         """
+        assert self.oct_data is not None
+
         # if current label is None, copy previous label
         if ind > 0 and not self.oct_data.labels[ind]:
             print("Copying last labels")
@@ -265,6 +272,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self._imv_update_linear_regions_from_labels(ind)
 
     def _imv_copy_last_label(self):
+        assert self.oct_data is not None
+
         ind = self.imv.currentIndex
         self.oct_data.labels[ind] = deepcopy(self.oct_data.labels[ind - 1])
 
@@ -272,13 +281,14 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         """
         Update the LinearRegionItem from OctData.labels
         """
+        assert self.oct_data is not None
+
         if ind is None:
             ind = self.imv.currentIndex
 
         # remove current LinearRegionItem and TextItem from the
         # view_box and from the imv_region2label cache
         view_box = self.imv.getView()
-        print(f"{self.imv_region2textItem=}")
         for imv_region, ti in self.imv_region2textItem.items():
             view_box.removeItem(imv_region)
             view_box.removeItem(ti)

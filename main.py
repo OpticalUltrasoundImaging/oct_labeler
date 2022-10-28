@@ -88,24 +88,26 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         super().__init__()
 
         ### Top horizontal Layout
-        self.file_dialog_btn = QtWidgets.QPushButton("Select mat file", self)
+        self.file_dialog_btn = QtWidgets.QPushButton("&Open mat file", self)
         self.file_dialog_btn.clicked.connect(self.open_file_dialog)
         self.fname: str | Path = ""
 
         self.text = QtWidgets.QLabel("Welcome to OCT Image Labeler")
 
         ### Second horizontal layout
-        self.time_dec_btn = QtWidgets.QPushButton("<", self)
-        self.time_inc_btn = QtWidgets.QPushButton(">", self)
+        self.time_dec_btn = QtWidgets.QPushButton("&Back", self)
+        self.time_dec_btn.clicked.connect(lambda: self.imv and self.imv.jumpFrames(-1))
+        self.time_inc_btn = QtWidgets.QPushButton("&Forward", self)
+        self.time_inc_btn.clicked.connect(lambda: self.imv and self.imv.jumpFrames(1))
         def _save_labels():
             if self.oct_data:
                 label_path = self.oct_data.save_labels()
                 msg = f"Saved labels to {label_path}"
                 self.status_msg(msg)
-        self.save_label_btn = QtWidgets.QPushButton("Save labels", self)
+        self.save_label_btn = QtWidgets.QPushButton("&Save labels", self)
         self.save_label_btn.clicked.connect(_save_labels)
-        self.remove_label_btn = QtWidgets.QPushButton("Remove last touched label", self)
-        self.add_label_btn = QtWidgets.QPushButton("Add label", self)
+        self.remove_label_btn = QtWidgets.QPushButton("&Delete last touched label", self)
+        self.add_label_btn = QtWidgets.QPushButton("&Add label", self)
         self.add_label_btn.clicked.connect(self._add_label)
 
         self.label_combo_box = QtWidgets.QComboBox()
@@ -204,6 +206,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         else:
             self.status_msg(f"Loaded {self.fname}")
         QtWidgets.QApplication.restoreOverrideCursor()
+        self.text.setText("Opened " + self.fname)
 
     def _load_oct_data(self, fname: str | Path) -> OctData | None:
         fname = Path(fname)

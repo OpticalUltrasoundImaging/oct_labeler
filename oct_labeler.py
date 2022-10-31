@@ -99,16 +99,20 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.time_dec_btn.clicked.connect(lambda: self.imv and self.imv.jumpFrames(-1))
         self.time_inc_btn = QtWidgets.QPushButton("&Forward", self)
         self.time_inc_btn.clicked.connect(lambda: self.imv and self.imv.jumpFrames(1))
+
         def _save_labels():
             if self.oct_data:
                 label_path = self.oct_data.save_labels()
                 msg = f"Saved labels to {label_path}"
                 self.status_msg(msg)
+
         self.save_label_btn = QtWidgets.QPushButton("&Save labels", self)
         self.save_label_btn.clicked.connect(_save_labels)
         self.duplicate_labels_btn = QtWidgets.QPushButton("&Copy last labels", self)
         self.duplicate_labels_btn.clicked.connect(self._imv_copy_last_label)
-        self.remove_label_btn = QtWidgets.QPushButton("&Delete last touched label", self)
+        self.remove_label_btn = QtWidgets.QPushButton(
+            "&Delete last touched label", self
+        )
         self.add_label_btn = QtWidgets.QPushButton("&Add label", self)
         self.add_label_btn.clicked.connect(self._add_label)
 
@@ -176,7 +180,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         ### Debug use
         # self.oct_data = self._load_oct_data("~/box/oct invivo/10 polyps a & b/raw_data_image_polypa_cut_aligned.mat")
         # if self.oct_data:
-            # self._disp_image()
+        # self._disp_image()
 
     def status_msg(self, msg: str):
         print(msg)
@@ -194,13 +198,12 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         # Load matfile
         self.status_msg(f"Loading {self.fname}")
         self.repaint()  # force render the status message
-        QtWidgets.QApplication.setOverrideCursor(QtGui.Qt.WaitCursor)
         try:
             self.oct_data = self._load_oct_data(self.fname)
             if self.oct_data:
                 # show images
                 self._disp_image()
-                # create LinearRegionItem if labels 
+                # create LinearRegionItem if labels
                 self._imv_update_linear_regions_from_labels()
         except Exception as e:
             print(e)
@@ -208,26 +211,39 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             self.status_msg(f"Failed to load {self.fname}")
         else:
             self.status_msg(f"Loaded {self.fname}")
-        QtWidgets.QApplication.restoreOverrideCursor()
         self.text.setText("Opened " + self.fname)
 
     def _load_oct_data(self, fname: str | Path) -> OctData | None:
         fname = Path(fname)
         assert fname.exists()
+
+        QtWidgets.QApplication.setOverrideCursor(QtGui.Qt.WaitCursor)
         mat = sio.loadmat(fname)
+        QtWidgets.QApplication.restoreOverrideCursor()
+
         keys = [s for s in mat.keys() if not s.startswith("__")]
 
         print(f"Available keys in data file: {keys}")
         key = "I_updated"
-        if key in keys:
-            scans = mat[key]
-            scans = np.moveaxis(scans, -1, 0)
-            assert len(scans) > 0
-        else:
-            self.error_dialog(
-                f'Key "{key}" not found in "{Path(fname).name}". Available keys are {keys}. Please load the cut/aligned Mat file.'
+        if key not in keys:
+            btn = QtWidgets.QMessageBox.question(
+                self,
+                "",
+                f'Key "{key}" not found in "{Path(fname).name}". Available keys are {keys}. Use {keys[0]}?',
             )
-            return None
+
+            if btn == QtWidgets.QMessageBox.StandardButton.Yes:
+                key = keys[0]
+                print(f"Using {key=}")
+            else:
+                self.error_dialog(
+                    f'Key "{key}" not found in "{Path(fname).name}". Available keys are {keys}. Please load the cut/aligned Mat file.'
+                )
+                return None
+
+        scans = mat[key]
+        scans = np.moveaxis(scans, -1, 0)
+        assert len(scans) > 0
 
         oct_data = OctData(path=fname, mat=mat, imgs=scans, labels=[None] * len(scans))
 
@@ -356,7 +372,9 @@ if __name__ == "__main__":
     import sys
 
     app = QtWidgets.QApplication([])
-    app.setApplicationDisplayName(f"OCT Image Labeler ({'.'.join((str(i) for i in __version__))})")
+    app.setApplicationDisplayName(
+        f"OCT Image Labeler ({'.'.join((str(i) for i in __version__))})"
+    )
 
     win = AppWin()
     win.showMaximized()

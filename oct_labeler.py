@@ -106,6 +106,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 self.status_msg(msg)
         self.save_label_btn = QtWidgets.QPushButton("&Save labels", self)
         self.save_label_btn.clicked.connect(_save_labels)
+        self.duplicate_labels_btn = QtWidgets.QPushButton("&Copy last labels", self)
+        self.duplicate_labels_btn.clicked.connect(self._imv_copy_last_label)
         self.remove_label_btn = QtWidgets.QPushButton("&Delete last touched label", self)
         self.add_label_btn = QtWidgets.QPushButton("&Add label", self)
         self.add_label_btn.clicked.connect(self._add_label)
@@ -155,6 +157,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         hlayout2.addWidget(self.time_dec_btn)
         hlayout2.addWidget(self.time_inc_btn)
         hlayout2.addWidget(self.save_label_btn)
+        hlayout2.addWidget(self.duplicate_labels_btn)
         hlayout2.addWidget(self.remove_label_btn)
         hlayout2.addWidget(self.add_label_btn)
         hlayout2.addWidget(self.label_combo_box)
@@ -281,20 +284,20 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         """
         callback for when ImageView's time changes (moved to a new image)
         """
-        assert self.oct_data is not None
-
-        # if current label is None, copy previous label
-        if ind > 0 and not self.oct_data.labels[ind]:
-            print("Copying last labels")
-            self._imv_copy_last_label()
-
+        if self.oct_data is None:
+            return
         self._imv_update_linear_regions_from_labels(ind)
 
     def _imv_copy_last_label(self):
         assert self.oct_data is not None
 
         ind = self.imv.currentIndex
+
+        # copy labels in oct_data
         self.oct_data.labels[ind] = deepcopy(self.oct_data.labels[ind - 1])
+
+        # update display
+        self._imv_update_linear_regions_from_labels(ind)
 
     def _imv_update_linear_regions_from_labels(self, ind: int | None = None):
         """

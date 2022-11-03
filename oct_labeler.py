@@ -10,7 +10,7 @@ from PySide6 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
 import numpy as np
 
-__version__ = (0, 1, 0)
+__version__ = (0, 2, 0)
 
 INI_FILE = "oct_labeler.ini"
 
@@ -58,6 +58,8 @@ class OctData:
         label_path = self.get_label_fname_from_img_path(self.path)
         with open(label_path, "wb") as fp:
             pickle.dump(self.labels, fp)
+
+        self.dirty = False
         return label_path
 
     def load_labels(self):
@@ -87,6 +89,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def __init__(self):
         super().__init__()
 
+        # flag to mark if there are unsaved changes
+        self.dirty: bool = False
+
         ### Top horizontal Layout
         self.file_dialog_btn = QtWidgets.QPushButton("&Open mat file", self)
         self.file_dialog_btn.clicked.connect(self.open_file_dialog)
@@ -100,14 +105,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.time_inc_btn = QtWidgets.QPushButton("&Forward", self)
         self.time_inc_btn.clicked.connect(lambda: self.imv and self.imv.jumpFrames(1))
 
-        def _save_labels():
-            if self.oct_data:
-                label_path = self.oct_data.save_labels()
-                msg = f"Saved labels to {label_path}"
-                self.status_msg(msg)
-
         self.save_label_btn = QtWidgets.QPushButton("&Save labels", self)
-        self.save_label_btn.clicked.connect(_save_labels)
+        self.save_label_btn.clicked.connect(self._save_labels)
         self.duplicate_labels_btn = QtWidgets.QPushButton("&Copy last labels", self)
         self.duplicate_labels_btn.clicked.connect(self._imv_copy_last_label)
         self.remove_label_btn = QtWidgets.QPushButton(
@@ -135,19 +134,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.imv_region2label: dict[pg.LinearRegionItem, str] = {}
         self.imv_region2textItem: dict[pg.LinearRegionItem, pg.TextItem] = {}
 
-        def _remove_last_clicked_label():
-            if self.curr_label_region is None:
-                return
-            label = self.imv_region2label.pop(self.curr_label_region)
-            ti = self.imv_region2textItem.pop(self.curr_label_region)
-            view_box = self.imv.getView()
-            view_box.removeItem(self.curr_label_region)
-            view_box.removeItem(ti)
-            self.curr_label_region = None
-
-            self._imv_linear_region_change_finished()
-
-        self.remove_label_btn.clicked.connect(_remove_last_clicked_label)
+        self.remove_label_btn.clicked.connect(self._remove_last_clicked_label)
 
         self.oct_data: OctData | None = None
 
@@ -183,11 +170,19 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         # self._disp_image()
 
     def status_msg(self, msg: str):
-        print(msg)
+        """
+        Display a msg in the bottom status bar of the main window
+        """
+        print("status_msg:", msg)
         self.statusBar().showMessage(msg)
 
     @QtCore.Slot()
     def open_file_dialog(self):
+        if self.dirty and not self._handle_dirty_close():
+            return
+
+        self.dirty = False
+                
         # Get filename from File Dialog
         self.fname, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, caption="Open OCT aligned Mat file", filter="Mat files (*.mat)"
@@ -217,7 +212,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         fname = Path(fname)
         assert fname.exists()
 
-        QtWidgets.QApplication.setOverrideCursor(QtGui.Qt.WaitCursor)
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         mat = sio.loadmat(fname)
         QtWidgets.QApplication.restoreOverrideCursor()
 
@@ -255,6 +250,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         return oct_data
 
+    def _save_labels(self):
+        if self.oct_data:
+            label_path = self.oct_data.save_labels()
+            self.dirty = False
+            msg = f"Saved labels to {label_path}"
+            self.status_msg(msg)
+
     def _disp_image(self):
         assert self.oct_data is not None
         self.imv.setImage(self.oct_data.imgs)
@@ -263,6 +265,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def _add_label(self, rgn: tuple[int, int] | None = None, label: str | None = None):
         if not self.oct_data:
             return
+
+        self.dirty = True
 
         x_max = self.oct_data.imgs.shape[-1]
 
@@ -294,6 +298,27 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.imv_region2label[lri] = label
         self.imv_region2textItem[lri] = ti
         self.curr_label_region = lri
+
+    @QtCore.Slot()
+    def _remove_last_clicked_label(self):
+        """
+        Remove `self.curr_label_region` from the plot and from 
+        oct_data (handled by `_imv_linear_region_change_finished`)
+        """
+        if self.curr_label_region is None:
+            return
+
+        self.dirty = True
+
+        self.imv_region2label.pop(self.curr_label_region)
+        ti = self.imv_region2textItem.pop(self.curr_label_region)
+
+        view_box = self.imv.getView()
+        view_box.removeItem(self.curr_label_region)
+        view_box.removeItem(ti)
+        self.curr_label_region = None
+
+        self._imv_linear_region_change_finished()
 
     @QtCore.Slot()
     def _imv_time_changed(self, ind, _):
@@ -353,9 +378,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
     @QtCore.Slot()
     def _imv_linear_region_change_finished(self, lnr_rgn: pg.LinearRegionItem = None):
         "update oct_data labels after dragging linear region"
+        self.dirty = True
         ind = self.imv.currentIndex
 
         # get labes for this ind
+        assert self.oct_data
         labels = self.oct_data.labels[ind]
         if labels is None:
             self.oct_data.labels[ind] = []
@@ -366,6 +393,46 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         for lnr_rgn, label in self.imv_region2label.items():
             rgn = lnr_rgn.getRegion()
             labels.append((rgn, label))
+
+    def _handle_dirty_close(self) -> bool:
+        """
+        Pop up a dialog to ask if {save,discard,cancel}
+
+        If {save,discard}, return True
+        If {cancel}, return False
+        """
+
+        # popup message box dialog
+        dl = QtWidgets.QMessageBox(self)
+        dl.setText("The labels have been modified.")
+        dl.setInformativeText("Do you want to save your changes?")
+        dl.setStandardButtons(
+            QtWidgets.QMessageBox.Save
+            | QtWidgets.QMessageBox.Discard
+            | QtWidgets.QMessageBox.Cancel
+        ) # pyright: ignore
+        dl.setDefaultButton(QtWidgets.QMessageBox.Save)
+
+        ret = dl.exec()
+        if ret == QtWidgets.QMessageBox.Save:
+            self._save_labels()
+            return True
+        elif ret == QtWidgets.QMessageBox.Discard:
+            return True
+
+        return False
+
+    def closeEvent(self, event: QtGui.QCloseEvent):
+        """
+        Override closeEvent to handle unsaved changes
+        """
+        # popup dialog to remind user to save data
+        if self.dirty and not self._handle_dirty_close():
+            # cancel pressed. ignore closeEvent
+            event.ignore()
+            return
+
+        return super().closeEvent(event)
 
 
 if __name__ == "__main__":

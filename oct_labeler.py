@@ -262,11 +262,12 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.imv.setImage(self.oct_data.imgs)
 
     @QtCore.Slot()
-    def _add_label(self, rgn: tuple[int, int] | None = None, label: str | None = None):
+    def _add_label(self, rgn: tuple[int, int] | None = None, label: str | None = None, _dirty = True):
         if not self.oct_data:
             return
 
-        self.dirty = True
+        if _dirty:
+            self.dirty = True
 
         x_max = self.oct_data.imgs.shape[-1]
 
@@ -362,23 +363,26 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         labels: Labels = self.oct_data.labels[ind]
         if labels:
             for rgn, label in labels:
-                self._add_label(rgn, label)
-
-    @QtCore.Slot()
-    def _imv_linear_region_changed(self, lnr_rgn: pg.LinearRegionItem):
-        "during drag of linear region, update text item position"
-        ti = self.imv_region2textItem[lnr_rgn]
-        ti.setPos(lnr_rgn.getRegion()[0], 0)
+                self._add_label(rgn, label, _dirty=False)
 
     @QtCore.Slot()
     def _update_curr_label_region(self, lnr_rgn):
         "Slot to handle click on a linear region"
         self.curr_label_region = lnr_rgn
 
+
+    @QtCore.Slot()
+    def _imv_linear_region_changed(self, lnr_rgn: pg.LinearRegionItem):
+        "During drag of linear region, update text item position"
+        ti = self.imv_region2textItem[lnr_rgn]
+        ti.setPos(lnr_rgn.getRegion()[0], 0)
+        self.dirty = True
+
     @QtCore.Slot()
     def _imv_linear_region_change_finished(self, lnr_rgn: pg.LinearRegionItem = None):
-        "update oct_data labels after dragging linear region"
-        self.dirty = True
+        """
+        Update oct_data labels after dragging linear region
+        """
         ind = self.imv.currentIndex
 
         # get labes for this ind

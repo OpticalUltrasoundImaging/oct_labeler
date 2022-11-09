@@ -47,7 +47,9 @@ class CheckableList(QtWidgets.QListWidget):
         if _item := self._items_d.get(name):
             _item.setToolTip(txt)
         else:
-            raise ValueError(f"Attemping to set tooltip to item that doesn't exist: {name}")
+            raise ValueError(
+                f"Attemping to set tooltip to item that doesn't exist: {name}"
+            )
 
     def get_state(self, name: str) -> bool:
         """
@@ -75,9 +77,7 @@ class CheckableList(QtWidgets.QListWidget):
 
     def set_state(self, name: str, state: bool):
         if _item := self._items_d.get(name):
-            _item.setCheckState(
-                self.Checked if state else self.Unchecked
-            )
+            _item.setCheckState(self.Checked if state else self.Unchecked)
         else:
             raise ValueError(
                 f"Trying to set state of an item that doesn't exist: {name}"

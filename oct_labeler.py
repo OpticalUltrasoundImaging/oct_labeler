@@ -156,7 +156,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         polyp_type_list.itemChanged.connect(_tmp)
 
         def _calc_ListWidget_size(ql: QtWidgets.QListWidget) -> tuple[int, int]:
-            height =  ql.sizeHintForRow(0) * (ql.count() + 1)
+            height = ql.sizeHintForRow(0) * (ql.count() + 1)
             width = ql.sizeHintForColumn(0) + 10
             return width, height
 
@@ -169,7 +169,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         label_list.setMaximumWidth(w1)
         polyp_type_list.setMaximumWidth(w2)
-
 
         labels_gb = wrap_groupbox(
             "Labels",
@@ -209,7 +208,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         hlayout2.addWidget(label_list)
         hlayout2.addWidget(polyp_type_list)
 
-        label_selection_gb = wrap_groupbox("Label selection", )
+        label_selection_gb = wrap_groupbox(
+            "Label selection",
+        )
 
         # main layout
         w = QtWidgets.QWidget()

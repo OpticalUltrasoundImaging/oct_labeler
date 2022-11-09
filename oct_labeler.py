@@ -1,27 +1,28 @@
+from typing import Sequence
 from pathlib import Path
 from dataclasses import dataclass
-from configparser import ConfigParser
 from copy import deepcopy
 import pickle
 
-import scipy.io as sio
-
 from PySide6 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
+import scipy.io as sio
 import numpy as np
+
+from checkable_list import CheckableList
 
 __version__ = (0, 2, 0)
 
-INI_FILE = "oct_labeler.ini"
 
-config = ConfigParser()
-config.read(INI_FILE)
-try:
-    LABELS = config.get("labeler", "labels").split(",")
-except Exception as e:
-    print(f"Failed to read labels from '{INI_FILE}'")
-    print(e)
-    LABELS = ["normal", "polyp", "cancer"]
+LABELS = ["normal", "polyp", "cancer", "scar", "other"]
+POLYP_TYPES = [
+    ("TA", "Tubular adenoma"),
+    ("TVA", "Tubulovillous adenoma"),
+    ("VA", "Villous adenoma"),
+    ("HP", "Hyperplastic polyp"),
+    ("SSA", "Sessile serrated adenoma"),
+    "Adenocarcinoma",
+]
 
 pg.setConfigOption("imageAxisOrder", "row-major")
 pg.setConfigOption("background", "w")
@@ -50,7 +51,6 @@ Labels = list[tuple[tuple[int, int], str]]
 @dataclass
 class OctData:
     path: str | Path  # path to the image mat file
-    mat: dict  # original mat dict from sio.loadmat
     imgs: np.ndarray  # ref to image array
     labels: list[Labels]  # [[((10, 20), "normal")]]
 
@@ -85,6 +85,26 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
         super().mousePressEvent(e)
 
 
+def wrap_groupbox(name: str, *widgets: QtWidgets.QWidget | Sequence[QtWidgets.QWidget]):
+    """
+    Wrap widgets in a QGroupBox
+
+    Usage:
+    >>> wrap_groupbox("Tasks", [widget1, widget2])
+    """
+    gb = QtWidgets.QGroupBox(name)
+    hlayout = QtWidgets.QHBoxLayout(gb)
+    for w in widgets:
+        if isinstance(w, QtWidgets.QWidget):
+            hlayout.addWidget(w)
+        else:
+            layout = QtWidgets.QVBoxLayout()
+            for widget in w:
+                layout.addWidget(widget)
+            hlayout.addLayout(layout)
+    return gb
+
+
 class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def __init__(self):
         super().__init__()
@@ -92,32 +112,71 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         # flag to mark if there are unsaved changes
         self.dirty: bool = False
 
+        debug_btn = QtWidgets.QPushButton("Breakpoint")
+        debug_btn.clicked.connect(self.breakpoint)
+
         ### Top horizontal Layout
-        self.file_dialog_btn = QtWidgets.QPushButton("&Open mat file", self)
-        self.file_dialog_btn.clicked.connect(self.open_file_dialog)
+        file_dialog_btn = QtWidgets.QPushButton("&Open mat file", self)
+        file_dialog_btn.clicked.connect(self.open_file_dialog)
         self.fname: str | Path = ""
 
-        self.text = QtWidgets.QLabel("Welcome to OCT Image Labeler")
+        self.text_msg = QtWidgets.QLabel("Welcome to OCT Image Labeler")
 
         ### Second horizontal layout
-        self.time_dec_btn = QtWidgets.QPushButton("&Back", self)
-        self.time_dec_btn.clicked.connect(lambda: self.imv and self.imv.jumpFrames(-1))
-        self.time_inc_btn = QtWidgets.QPushButton("&Forward", self)
-        self.time_inc_btn.clicked.connect(lambda: self.imv and self.imv.jumpFrames(1))
+        time_dec_btn = QtWidgets.QPushButton("&Back", self)
+        time_dec_btn.clicked.connect(lambda: self.oct_data and self.imv.jumpFrames(-1))
+        time_inc_btn = QtWidgets.QPushButton("&Forward", self)
+        time_inc_btn.clicked.connect(lambda: self.oct_data and self.imv.jumpFrames(1))
 
-        self.save_label_btn = QtWidgets.QPushButton("&Save labels", self)
-        self.save_label_btn.clicked.connect(self._save_labels)
-        self.duplicate_labels_btn = QtWidgets.QPushButton("&Copy last labels", self)
-        self.duplicate_labels_btn.clicked.connect(self._imv_copy_last_label)
-        self.remove_label_btn = QtWidgets.QPushButton(
-            "&Delete last touched label", self
+        nav_gb = wrap_groupbox("Navigation", [time_dec_btn, time_inc_btn, debug_btn])
+
+        save_label_btn = QtWidgets.QPushButton("&Save labels", self)
+        save_label_btn.clicked.connect(self._save_labels)
+        duplicate_labels_btn = QtWidgets.QPushButton("&Copy last labels", self)
+        duplicate_labels_btn.clicked.connect(self._imv_copy_last_label)
+        remove_label_btn = QtWidgets.QPushButton("&Delete last touched label", self)
+        add_label_btn = QtWidgets.QPushButton("&Add label", self)
+        add_label_btn.clicked.connect(self._add_label)
+
+        label_list = CheckableList(LABELS)
+        self.label_list = label_list
+
+        _polyp_types = [i if isinstance(i, str) else i[0] for i in POLYP_TYPES]
+        polyp_type_list = CheckableList(_polyp_types)
+        for i in POLYP_TYPES:
+            if isinstance(i, tuple):
+                polyp_type_list.set_item_tooltip(i[0], i[1])
+        self.polyp_type_list = polyp_type_list
+
+        def _tmp(item: QtWidgets.QListWidgetItem):
+            name = item.text()
+            checked = item.checkState() == QtCore.Qt.CheckState.Checked
+            print(name, checked)
+
+        polyp_type_list.itemChanged.connect(_tmp)
+
+        def _calc_ListWidget_size(ql: QtWidgets.QListWidget) -> tuple[int, int]:
+            height =  ql.sizeHintForRow(0) * (ql.count() + 1)
+            width = ql.sizeHintForColumn(0) + 10
+            return width, height
+
+        w1, h1 = _calc_ListWidget_size(label_list)
+        w2, h2 = _calc_ListWidget_size(polyp_type_list)
+
+        _max_height = max(h1, h2)
+        label_list.setMaximumHeight(_max_height)
+        polyp_type_list.setMaximumHeight(_max_height)
+
+        label_list.setMaximumWidth(w1)
+        polyp_type_list.setMaximumWidth(w2)
+
+
+        labels_gb = wrap_groupbox(
+            "Labels",
+            [save_label_btn, add_label_btn, duplicate_labels_btn, remove_label_btn],
+            # label_list,
+            # polyp_type_list,
         )
-        self.add_label_btn = QtWidgets.QPushButton("&Add label", self)
-        self.add_label_btn.clicked.connect(self._add_label)
-
-        self.label_combo_box = QtWidgets.QComboBox()
-        self.label_combo_box.addItems(LABELS)
-        self.label_combo_box.setCurrentText(LABELS[0])
 
         ### image view area
         self.imv = pg.ImageView(self, name="ImageView")
@@ -134,24 +193,23 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.imv_region2label: dict[pg.LinearRegionItem, str] = {}
         self.imv_region2textItem: dict[pg.LinearRegionItem, pg.TextItem] = {}
 
-        self.remove_label_btn.clicked.connect(self._remove_last_clicked_label)
+        remove_label_btn.clicked.connect(self._remove_last_clicked_label)
 
         self.oct_data: OctData | None = None
 
         ### Define layout
         # top horizontal layout
         hlayout1 = QtWidgets.QHBoxLayout()
-        hlayout1.addWidget(self.file_dialog_btn)
-        hlayout1.addWidget(self.text)
+        hlayout1.addWidget(file_dialog_btn)
+        hlayout1.addWidget(self.text_msg)
 
         hlayout2 = QtWidgets.QHBoxLayout()
-        hlayout2.addWidget(self.time_dec_btn)
-        hlayout2.addWidget(self.time_inc_btn)
-        hlayout2.addWidget(self.save_label_btn)
-        hlayout2.addWidget(self.duplicate_labels_btn)
-        hlayout2.addWidget(self.remove_label_btn)
-        hlayout2.addWidget(self.add_label_btn)
-        hlayout2.addWidget(self.label_combo_box)
+        hlayout2.addWidget(nav_gb)
+        hlayout2.addWidget(labels_gb)
+        hlayout2.addWidget(label_list)
+        hlayout2.addWidget(polyp_type_list)
+
+        label_selection_gb = wrap_groupbox("Label selection", )
 
         # main layout
         w = QtWidgets.QWidget()
@@ -182,7 +240,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             return
 
         self.dirty = False
-                
+
         # Get filename from File Dialog
         self.fname, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, caption="Open OCT aligned Mat file", filter="Mat files (*.mat)"
@@ -206,7 +264,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             self.status_msg(f"Failed to load {self.fname}")
         else:
             self.status_msg(f"Loaded {self.fname}")
-        self.text.setText("Opened " + self.fname)
+        self.text_msg.setText("Opened " + self.fname)
 
     def _load_oct_data(self, fname: str | Path) -> OctData | None:
         fname = Path(fname)
@@ -240,7 +298,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         scans = np.moveaxis(scans, -1, 0)
         assert len(scans) > 0
 
-        oct_data = OctData(path=fname, mat=mat, imgs=scans, labels=[None] * len(scans))
+        oct_data = OctData(path=fname, imgs=scans, labels=[None] * len(scans))
 
         # try to load labels if they exist
         try:
@@ -262,7 +320,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.imv.setImage(self.oct_data.imgs)
 
     @QtCore.Slot()
-    def _add_label(self, rgn: tuple[int, int] | None = None, label: str | None = None, _dirty = True):
+    def _add_label(
+        self, rgn: tuple[int, int] | None = None, label: str | None = None, _dirty=True
+    ):
+        """
+        To add label without setting self.dirty, pass `_dirty = False` in the parameters
+        (for switching between frames and loading existing labels).
+        """
         if not self.oct_data:
             return
 
@@ -303,7 +367,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
     @QtCore.Slot()
     def _remove_last_clicked_label(self):
         """
-        Remove `self.curr_label_region` from the plot and from 
+        Remove `self.curr_label_region` from the plot and from
         oct_data (handled by `_imv_linear_region_change_finished`)
         """
         if self.curr_label_region is None:
@@ -370,7 +434,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         "Slot to handle click on a linear region"
         self.curr_label_region = lnr_rgn
 
-
     @QtCore.Slot()
     def _imv_linear_region_changed(self, lnr_rgn: pg.LinearRegionItem):
         "During drag of linear region, update text item position"
@@ -414,7 +477,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             QtWidgets.QMessageBox.Save
             | QtWidgets.QMessageBox.Discard
             | QtWidgets.QMessageBox.Cancel
-        ) # pyright: ignore
+        )  # pyright: ignore
         dl.setDefaultButton(QtWidgets.QMessageBox.Save)
 
         ret = dl.exec()
@@ -437,6 +500,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             return
 
         return super().closeEvent(event)
+
+    def breakpoint(self):
+        """
+        Debug slot
+        """
+        breakpoint()
+        print("")
 
 
 if __name__ == "__main__":

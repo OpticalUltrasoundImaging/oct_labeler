@@ -5,6 +5,7 @@ from copy import deepcopy
 import pickle
 
 from PySide6 import QtCore, QtWidgets, QtGui
+from PySide6.QtCore import Qt
 import pyqtgraph as pg
 import scipy.io as sio
 import numpy as np
@@ -34,15 +35,10 @@ class WindowMixin:
         """
         Display `msg` in a popup error dialog
         """
-        attr_name = "_err_dialog"
-        if not hasattr(self, attr_name):
-            err_dialog = QtWidgets.QErrorMessage(self)
-            err_dialog.setWindowTitle("Error")
-            setattr(self, attr_name, err_dialog)
-        else:
-            err_dialog = getattr(self, attr_name)
-
+        err_dialog = QtWidgets.QErrorMessage()
+        err_dialog.setWindowTitle("Error")
         err_dialog.showMessage(msg)
+        err_dialog.exec()
 
 
 Labels = list[tuple[tuple[int, int], str]]
@@ -68,8 +64,8 @@ class OctData:
             self.labels = pickle.load(fp)
 
     @classmethod
-    def from_mat_path(cls, path: str):
-        ...
+    def from_mat_path(cls, _: str):
+        raise NotImplementedError()
 
     @staticmethod
     def get_label_fname_from_img_path(path: str | Path, ext=".pkl") -> Path:
@@ -150,7 +146,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         def _tmp(item: QtWidgets.QListWidgetItem):
             name = item.text()
-            checked = item.checkState() == QtCore.Qt.CheckState.Checked
+            checked = item.checkState() == Qt.CheckState.Checked
             print(name, checked)
 
         polyp_type_list.itemChanged.connect(_tmp)
@@ -164,11 +160,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         w2, h2 = _calc_ListWidget_size(polyp_type_list)
 
         _max_height = max(h1, h2)
+        _max_width = max(w1, w2)
+
         label_list.setMaximumHeight(_max_height)
         polyp_type_list.setMaximumHeight(_max_height)
 
-        label_list.setMaximumWidth(w1)
-        polyp_type_list.setMaximumWidth(w2)
+        label_list.setMaximumWidth(_max_width)
+        polyp_type_list.setMaximumWidth(_max_width)
 
         labels_gb = wrap_groupbox(
             "Labels",
@@ -207,10 +205,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         hlayout2.addWidget(labels_gb)
         hlayout2.addWidget(label_list)
         hlayout2.addWidget(polyp_type_list)
-
-        label_selection_gb = wrap_groupbox(
-            "Label selection",
-        )
 
         # main layout
         w = QtWidgets.QWidget()
@@ -271,7 +265,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         fname = Path(fname)
         assert fname.exists()
 
-        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        QtWidgets.QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         mat = sio.loadmat(fname)
         QtWidgets.QApplication.restoreOverrideCursor()
 
@@ -331,18 +325,28 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if not self.oct_data:
             return
 
-        if _dirty:
-            self.dirty = True
-
         x_max = self.oct_data.imgs.shape[-1]
 
         if rgn is None:
             rgn = (0, x_max // 2)
 
         if label is None:
-            label = self.label_combo_box.currentText()
+            label = self.label_list.get_checked_str()
+            if not label:
+                self.error_dialog("Please select a label first")
+                return
+
+            if label == "polyp":
+                _polyp_type = self.polyp_type_list.get_checked_str()
+                if not _polyp_type:
+                    self.error_dialog("Please select a polyp type")
+                    return
+                label += ";" + _polyp_type
 
         print(f"_add_label {rgn=} {label=}")
+        if _dirty:
+            self.dirty = True
+
 
         viewbox = self.imv.getView()
 
@@ -396,7 +400,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self._imv_update_linear_regions_from_labels(ind)
 
     def _imv_copy_last_label(self):
-        assert self.oct_data is not None
+        assert self.oct_data
 
         ind = self.imv.currentIndex
 
@@ -410,10 +414,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         """
         Update the LinearRegionItem from OctData.labels
         """
-        assert self.oct_data is not None
+        assert self.oct_data
 
         if ind is None:
-            ind = self.imv.currentIndex
+            ind = int(self.imv.currentIndex)
 
         # remove current LinearRegionItem and TextItem from the
         # view_box and from the imv_region2label cache
@@ -443,7 +447,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.dirty = True
 
     @QtCore.Slot()
-    def _imv_linear_region_change_finished(self, lnr_rgn: pg.LinearRegionItem = None):
+    def _imv_linear_region_change_finished(
+        self, lnr_rgn: pg.LinearRegionItem | None = None
+    ):
         """
         Update oct_data labels after dragging linear region
         """
@@ -469,23 +475,20 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         If {save,discard}, return True
         If {cancel}, return False
         """
+        sb = QtWidgets.QMessageBox.StandardButton
 
         # popup message box dialog
         dl = QtWidgets.QMessageBox(self)
         dl.setText("The labels have been modified.")
         dl.setInformativeText("Do you want to save your changes?")
-        dl.setStandardButtons(
-            QtWidgets.QMessageBox.Save
-            | QtWidgets.QMessageBox.Discard
-            | QtWidgets.QMessageBox.Cancel
-        )  # pyright: ignore
-        dl.setDefaultButton(QtWidgets.QMessageBox.Save)
+        dl.setStandardButtons(sb.Save | sb.Discard | sb.Cancel)
+        dl.setDefaultButton(sb.Save)
 
         ret = dl.exec()
-        if ret == QtWidgets.QMessageBox.Save:
+        if ret == sb.Save:
             self._save_labels()
             return True
-        elif ret == QtWidgets.QMessageBox.Discard:
+        elif ret == sb.Discard:
             return True
 
         return False

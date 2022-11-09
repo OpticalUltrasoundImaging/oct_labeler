@@ -88,6 +88,12 @@ class CheckableList(QtWidgets.QListWidget):
         for name, state in items:
             self.set_state(name, state)
 
+    def get_checked_str(self) -> str:
+        """
+        Return a comma-separated-string of all checked labels
+        """
+        return ",".join((i.text() for i in self._items_l if i.checkState() == self.Checked))
+
 
 if __name__ == "__main__":
 

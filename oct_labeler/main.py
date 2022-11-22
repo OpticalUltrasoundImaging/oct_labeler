@@ -1,8 +1,6 @@
 from typing import Sequence
 from pathlib import Path
-from dataclasses import dataclass
 from copy import deepcopy
-import pickle
 
 from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6.QtCore import Qt
@@ -10,9 +8,9 @@ import pyqtgraph as pg
 import scipy.io as sio
 import numpy as np
 
-from checkable_list import CheckableList
-
-__version__ = (0, 2, 0)
+from oct_labeler.checkable_list import CheckableList
+from oct_labeler.oct_data import OctData
+from oct_labeler.version import __version__
 
 
 LABELS = ["normal", "polyp", "cancer", "scar", "other"]
@@ -39,38 +37,6 @@ class WindowMixin:
         err_dialog.setWindowTitle("Error")
         err_dialog.showMessage(msg)
         err_dialog.exec()
-
-
-Labels = list[tuple[tuple[int, int], str]]
-
-
-@dataclass
-class OctData:
-    path: str | Path  # path to the image mat file
-    imgs: np.ndarray  # ref to image array
-    labels: list[Labels]  # [[((10, 20), "normal")]]
-
-    def save_labels(self) -> Path:
-        label_path = self.get_label_fname_from_img_path(self.path)
-        with open(label_path, "wb") as fp:
-            pickle.dump(self.labels, fp)
-
-        self.dirty = False
-        return label_path
-
-    def load_labels(self):
-        label_path = self.get_label_fname_from_img_path(self.path)
-        with open(label_path, "rb") as fp:
-            self.labels = pickle.load(fp)
-
-    @classmethod
-    def from_mat_path(cls, _: str):
-        raise NotImplementedError()
-
-    @staticmethod
-    def get_label_fname_from_img_path(path: str | Path, ext=".pkl") -> Path:
-        path = Path(path)
-        return path.parent / (path.stem + "_label" + ext)
 
 
 class LinearRegionItemClickable(pg.LinearRegionItem):
@@ -429,7 +395,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.imv_region2label.clear()
 
         # add current labels from oct_data
-        labels: Labels = self.oct_data.labels[ind]
+        labels = self.oct_data.labels[ind]
         if labels:
             for rgn, label in labels:
                 self._add_label(rgn, label, _dirty=False)
@@ -513,7 +479,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         print("")
 
 
-if __name__ == "__main__":
+def main():
     import sys
 
     app = QtWidgets.QApplication([])

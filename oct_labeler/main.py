@@ -24,8 +24,8 @@ POLYP_TYPES = [
 ]
 
 pg.setConfigOption("imageAxisOrder", "row-major")
-pg.setConfigOption("background", "w")
-pg.setConfigOption("foreground", "k")
+# pg.setConfigOption("background", "w")
+# pg.setConfigOption("foreground", "k")
 
 
 class WindowMixin:
@@ -481,8 +481,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
 def main():
     import sys
+    sys.argv += ['-platform', 'windows:darkmode=2']
 
-    app = QtWidgets.QApplication([])
+    app = QtWidgets.QApplication(sys.argv)
     app.setApplicationDisplayName(
         f"OCT Image Labeler ({'.'.join((str(i) for i in __version__))})"
     )

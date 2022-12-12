@@ -313,7 +313,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if _dirty:
             self.dirty = True
 
-
         viewbox = self.imv.getView()
 
         # add LinearRegionItem to represent label region
@@ -376,15 +375,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         # update display
         self._imv_update_linear_regions_from_labels(ind)
 
-    def _imv_update_linear_regions_from_labels(self, ind: int | None = None):
-        """
-        Update the LinearRegionItem from OctData.labels
-        """
-        assert self.oct_data
-
-        if ind is None:
-            ind = int(self.imv.currentIndex)
-
+    def _remove_displayed_linear_regions(self):
         # remove current LinearRegionItem and TextItem from the
         # view_box and from the imv_region2label cache
         view_box = self.imv.getView()
@@ -393,6 +384,18 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             view_box.removeItem(ti)
         self.imv_region2textItem.clear()
         self.imv_region2label.clear()
+
+    def _imv_update_linear_regions_from_labels(self, ind: int | None = None):
+        """
+        Update the LinearRegionItem from OctData.labels
+        """
+        if not self.oct_data:
+            return
+
+        if ind is None:
+            ind = int(self.imv.currentIndex)
+
+        self._remove_displayed_linear_regions()
 
         # add current labels from oct_data
         labels = self.oct_data.labels[ind]
@@ -433,6 +436,20 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         for lnr_rgn, label in self.imv_region2label.items():
             rgn = lnr_rgn.getRegion()
             labels.append((rgn, label))
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        match (event.text(), event.isAutoRepeat()):
+            case ("h", False):
+                # hide current linear region labels to reveal image
+                self._remove_displayed_linear_regions()
+        return super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event: QtGui.QKeyEvent):
+        match (event.text(), event.isAutoRepeat()):
+            case ("h", False):
+                # restore linear region labels
+                self._imv_update_linear_regions_from_labels()
+        return super().keyPressEvent(event)
 
     def _handle_dirty_close(self) -> bool:
         """
@@ -481,7 +498,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
 def main():
     import sys
-    sys.argv += ['-platform', 'windows:darkmode=2']
+
+    sys.argv += ["-platform", "windows:darkmode=2"]
 
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationDisplayName(

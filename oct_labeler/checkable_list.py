@@ -92,7 +92,9 @@ class CheckableList(QtWidgets.QListWidget):
         """
         Return a comma-separated-string of all checked labels
         """
-        return ",".join((i.text() for i in self._items_l if i.checkState() == self.Checked))
+        return ",".join(
+            (i.text() for i in self._items_l if i.checkState() == self.Checked)
+        )
 
 
 if __name__ == "__main__":

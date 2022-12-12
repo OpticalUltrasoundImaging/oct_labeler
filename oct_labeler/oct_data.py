@@ -34,6 +34,7 @@ class OctData:
     @classmethod
     def from_mat_path(cls, fname: str) -> OctData:
         import scipy.io as sio
+
         mat = sio.loadmat(fname)
 
         keys = [s for s in mat.keys() if not s.startswith("__")]

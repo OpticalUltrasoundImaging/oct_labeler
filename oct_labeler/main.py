@@ -498,8 +498,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
 def main():
     import sys
+    import os
 
-    sys.argv += ["-platform", "windows:darkmode=2"]
+    if os.name == "nt":
+        # Dark mode for Windows
+        sys.argv += ["-platform", "windows:darkmode=2"]
 
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationDisplayName(

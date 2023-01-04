@@ -11,6 +11,7 @@ import numpy as np
 from oct_labeler.checkable_list import CheckableList
 from oct_labeler.oct_data import OctData
 from oct_labeler.version import __version__
+from oct_labeler.single_select_dialog import SingleSelectDialog
 
 
 LABELS = ["normal", "polyp", "cancer", "scar", "other"]
@@ -240,14 +241,32 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         print(f"Available keys in data file: {keys}")
         key = "I_updated"
         if key not in keys:
-            btn = QtWidgets.QMessageBox.question(
-                self,
-                "",
-                f'Key "{key}" not found in "{Path(fname).name}". Available keys are {keys}. Use {keys[0]}?',
-            )
+            # btn = QtWidgets.QMessageBox.question(
+            # self,
+            # "",
+            # f'Key "{key}" not found in "{Path(fname).name}". Available keys are {keys}. Use {keys[0]}?',
+            # )
 
-            if btn == QtWidgets.QMessageBox.StandardButton.Yes:
-                key = keys[0]
+            # if btn == QtWidgets.QMessageBox.StandardButton.Yes:
+            # key = keys[0]
+            # print(f"Using {key=}")
+            # else:
+            # self.error_dialog(
+            # f'Key "{key}" not found in "{Path(fname).name}". Available keys are {keys}. Please load the cut/aligned Mat file.'
+            # )
+            # return None
+
+            selected = []
+            d = SingleSelectDialog(
+                msg=f'Key "{key}" not found in "{Path(fname).name}".',
+                options=keys,
+                gbtitle="Keys",
+                selected=selected,
+            )
+            ret = d.exec()
+            key = selected[0]
+
+            if ret:
                 print(f"Using {key=}")
             else:
                 self.error_dialog(

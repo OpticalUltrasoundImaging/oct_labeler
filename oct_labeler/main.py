@@ -368,12 +368,20 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self._imv_update_linear_regions_from_labels(ind)
 
     def _imv_copy_last_label(self):
+        """
+        For the current frame, try to copy the labels from the last (previous) frame.
+        If the previous frame doesn't have labels, try to copy labels from the next frame.
+        Otherwise do nothing.
+        """
         assert self.oct_data
 
         ind = self.imv.currentIndex
+        labels = self.oct_data.labels  # ref
 
-        # copy labels in oct_data
-        self.oct_data.labels[ind] = deepcopy(self.oct_data.labels[ind - 1])
+        if ind > 0 and labels[ind - 1]:
+            labels[ind] = deepcopy(labels[ind - 1])
+        elif ind < len(labels) - 1 and labels[ind + 1]:
+            labels[ind] = deepcopy(labels[ind + 1])
 
         # update display
         self._imv_update_linear_regions_from_labels(ind)

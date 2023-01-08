@@ -6,7 +6,8 @@ import pickle
 import numpy as np
 
 
-Labels = list[tuple[tuple[int, int], str]]
+ONE_LABEL = tuple[tuple[int, int], str]
+Labels = list[ONE_LABEL]
 
 
 @dataclass
@@ -53,3 +54,9 @@ class OctData:
     def get_label_fname_from_img_path(path: str | Path, ext=".pkl") -> Path:
         path = Path(path)
         return path.parent / (path.stem + "_label" + ext)
+
+    def shift_x(self, dx):
+        def m_one(l: ONE_LABEL):
+            return ((l[0][0] + dx, l[0][1] + dx), l[1])
+
+        self.labels = [[m_one(l) for l in ls] for ls in self.labels]

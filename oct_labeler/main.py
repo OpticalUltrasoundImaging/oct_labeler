@@ -225,7 +225,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             self.error_dialog("Unknown exception while reading file. Check logs.")
             self.status_msg(f"Failed to load {self.fname}")
         else:
-            self.status_msg(f"Loaded {self.fname}")
+            assert self.oct_data is not None
+            self.status_msg(f"Loaded {self.fname} {self.oct_data.imgs.shape}")
         self.text_msg.setText("Opened " + self.fname)
 
     def _load_oct_data(self, fname: str | Path) -> OctData | None:
@@ -241,30 +242,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         print(f"Available keys in data file: {keys}")
         key = "I_updated"
         if key not in keys:
-            # btn = QtWidgets.QMessageBox.question(
-            # self,
-            # "",
-            # f'Key "{key}" not found in "{Path(fname).name}". Available keys are {keys}. Use {keys[0]}?',
-            # )
-
-            # if btn == QtWidgets.QMessageBox.StandardButton.Yes:
-            # key = keys[0]
-            # print(f"Using {key=}")
-            # else:
-            # self.error_dialog(
-            # f'Key "{key}" not found in "{Path(fname).name}". Available keys are {keys}. Please load the cut/aligned Mat file.'
-            # )
-            # return None
-
-            selected = []
             d = SingleSelectDialog(
                 msg=f'Key "{key}" not found in "{Path(fname).name}".',
                 options=keys,
                 gbtitle="Keys",
-                selected=selected,
             )
             ret = d.exec()
-            key = selected[0]
+            key = d.get_selected()
 
             if ret:
                 print(f"Using {key=}")

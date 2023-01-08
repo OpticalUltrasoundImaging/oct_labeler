@@ -9,7 +9,6 @@ class SingleSelectDialog(QtWidgets.QDialog):
         options: list[str] = [],
         msg="",
         gbtitle="",
-        selected: list = [],
     ):
         super().__init__(parent)
 
@@ -28,13 +27,10 @@ class SingleSelectDialog(QtWidgets.QDialog):
 
         btns = [QtWidgets.QRadioButton(s) for s in options]
         btns[0].setChecked(True)
-        selected.append(btns[0].text())
+        self.selected = btns[0].text()
 
         def make_cb(s):
-            def cb():
-                selected[0] = s
-
-            return cb
+            return lambda: self.set_selected(s)
 
         [bn.clicked.connect(make_cb(s)) for bn, s in zip(btns, options)]
 
@@ -50,6 +46,12 @@ class SingleSelectDialog(QtWidgets.QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
+    def set_selected(self, option: str):
+        self.selected = option
+
+    def get_selected(self):
+        return self.selected
+
 
 if __name__ == "__main__":
     a = QtWidgets.QApplication()
@@ -59,13 +61,11 @@ if __name__ == "__main__":
 
     fname = "boo"
 
-    selected = []
     d = SingleSelectDialog(
         options=["o1", "option 2", "laksjdlajslkajsd"],
         msg=f'Key "{key}" not found in "{Path(fname).name}".',
         gbtitle="Available keys",
-        selected=selected,
     )
     ret = d.exec()
-
+    selected = d.get_selected()
     print("Dialog returned", ret, selected[0])

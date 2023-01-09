@@ -40,6 +40,10 @@ class WindowMixin:
         err_dialog.exec()
 
 
+LRI_brush = pg.mkBrush((0, 255, 0, 10))
+LRI_hoverBrush = pg.mkBrush((0, 255, 0, 30))
+
+
 class LinearRegionItemClickable(pg.LinearRegionItem):
     clicked = QtCore.Signal(pg.LinearRegionItem)
 
@@ -320,7 +324,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         # add LinearRegionItem to represent label region
         lri = LinearRegionItemClickable(
-            values=rgn, orientation="vertical", bounds=(0, x_max)
+            values=rgn,
+            orientation="vertical",
+            bounds=(0, x_max),
+            brush=LRI_brush,
+            hoverBrush=LRI_hoverBrush,
         )
         lri.sigRegionChangeFinished.connect(self._imv_linear_region_change_finished)
         lri.sigRegionChanged.connect(self._imv_linear_region_changed)

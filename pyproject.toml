@@ -1,3 +1,21 @@
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "oct_labeler"
+dependencies = [
+  "PySide6",
+  "pyqtgraph",
+  "numpy",
+  "scipy",
+  "PyInstaller; platform_system=='Windows'",
+]
+dynamic = ["version"]
+
+[project.scripts]
+oct_labeler = "oct_labeler.main:main"
+oct_label_migration = "oct_labeler.oct_label_migrate:main"
+
+[tools.setuptools.dynamic]
+version = {attr = "oct_labeler.__version__"}

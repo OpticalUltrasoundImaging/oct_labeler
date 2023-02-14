@@ -20,13 +20,15 @@ POLYP_TYPES = [
     ("TVA", "Tubulovillous adenoma"),
     ("VA", "Villous adenoma"),
     ("HP", "Hyperplastic polyp"),
-    ("SSA", "Sessile serrated adenoma"),
+    ("SSP", "Sessile serrated polyp"),
     "Adenocarcinoma",
 ]
 
 pg.setConfigOption("imageAxisOrder", "row-major")
 # pg.setConfigOption("background", "w")
 # pg.setConfigOption("foreground", "k")
+
+OCT_LABELER_DEBUG = False
 
 
 class WindowMixin:
@@ -79,9 +81,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         # flag to mark if there are unsaved changes
         self.dirty: bool = False
 
-        debug_btn = QtWidgets.QPushButton("Breakpoint")
-        debug_btn.clicked.connect(self.breakpoint)
-
         ### Top horizontal Layout
         file_dialog_btn = QtWidgets.QPushButton("&Open mat file", self)
         file_dialog_btn.clicked.connect(self.open_file_dialog)
@@ -95,7 +94,14 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         time_inc_btn = QtWidgets.QPushButton("&Forward", self)
         time_inc_btn.clicked.connect(lambda: self.oct_data and self.imv.jumpFrames(1))
 
-        nav_gb = wrap_groupbox("Navigation", [time_dec_btn, time_inc_btn, debug_btn])
+        if OCT_LABELER_DEBUG:
+            debug_btn = QtWidgets.QPushButton("Breakpoint")
+            debug_btn.clicked.connect(self.breakpoint)
+            nav_gb = wrap_groupbox(
+                "Navigation", [time_dec_btn, time_inc_btn, debug_btn]
+            )
+        else:
+            nav_gb = wrap_groupbox("Navigation", [time_dec_btn, time_inc_btn])
 
         save_label_btn = QtWidgets.QPushButton("&Save labels", self)
         save_label_btn.clicked.connect(self._save_labels)

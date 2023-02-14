@@ -1,3 +1,3 @@
-from oct_labeler.main import main
+from oct_labeler.cli import cli
 
-main()
+cli()

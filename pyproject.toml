@@ -9,13 +9,13 @@ dependencies = [
   "pyqtgraph",
   "numpy",
   "scipy",
+  "click",
   "PyInstaller; platform_system=='Windows'",
 ]
 dynamic = ["version"]
 
 [project.scripts]
-oct_labeler = "oct_labeler.main:main"
-oct_label_migration = "oct_labeler.oct_label_migrate:main"
+oct-label = "oct_labeler.cli:cli"
 
 [tools.setuptools.dynamic]
 version = {attr = "oct_labeler.__version__"}

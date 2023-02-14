@@ -272,7 +272,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         scans = np.moveaxis(scans, -1, 0)
         assert len(scans) > 0
 
-        oct_data = OctData(path=fname, imgs=scans, labels=[None] * len(scans))
+        label_path = OctData.label_path_from_img_path(fname)
+        oct_data = OctData(
+            path=fname, label_path=label_path, imgs=scans, labels=[None] * len(scans)
+        )
 
         # try to load labels if they exist
         try:

@@ -9,9 +9,10 @@ import scipy.io as sio
 import numpy as np
 
 from oct_labeler.checkable_list import CheckableList
-from oct_labeler.oct_data import OctData
+from oct_labeler.oct_data import OctData, OctDataHdf5
 from oct_labeler.version import __version__
 from oct_labeler.single_select_dialog import SingleSelectDialog
+from oct_labeler.wait_cursor import wait_cursor
 
 
 LABELS = ["normal", "polyp", "cancer", "scar", "other"]
@@ -54,6 +55,25 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
         super().mousePressEvent(e)
 
 
+def wrap_boxlayout(*widgets: QtWidgets.QWidget | list | tuple, boxdir="v"):
+    if boxdir == "v":
+        layout = QtWidgets.QVBoxLayout()
+        boxdir = "h"
+    else:
+        layout = QtWidgets.QHBoxLayout()
+        boxdir = "v"
+
+    for w in widgets:
+        if isinstance(w, QtWidgets.QLayout):
+            layout.addLayout(w)
+        elif isinstance(w, QtWidgets.QWidget):
+            layout.addWidget(w)
+        else:
+            assert isinstance(w, (list, tuple))
+            layout.addLayout(wrap_boxlayout(*w, boxdir=boxdir))
+    return layout
+
+
 def wrap_groupbox(name: str, *widgets: QtWidgets.QWidget | Sequence[QtWidgets.QWidget]):
     """
     Wrap widgets in a QGroupBox
@@ -62,15 +82,7 @@ def wrap_groupbox(name: str, *widgets: QtWidgets.QWidget | Sequence[QtWidgets.QW
     >>> wrap_groupbox("Tasks", [widget1, widget2])
     """
     gb = QtWidgets.QGroupBox(name)
-    hlayout = QtWidgets.QHBoxLayout(gb)
-    for w in widgets:
-        if isinstance(w, QtWidgets.QWidget):
-            hlayout.addWidget(w)
-        else:
-            layout = QtWidgets.QVBoxLayout()
-            for widget in w:
-                layout.addWidget(widget)
-            hlayout.addLayout(layout)
+    gb.setLayout(wrap_boxlayout(*widgets, boxdir="v"))
     return gb
 
 
@@ -82,13 +94,19 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.dirty: bool = False
 
         ### Top horizontal Layout
-        file_dialog_btn = QtWidgets.QPushButton("&Open mat file", self)
+        file_dialog_btn = QtWidgets.QPushButton("&Load data file", self)
         file_dialog_btn.clicked.connect(self.open_file_dialog)
         self.fname: str | Path = ""
 
         self.text_msg = QtWidgets.QLabel("Welcome to OCT Image Labeler")
 
         ### Second horizontal layout
+        area_label = QtWidgets.QLabel()
+        area_label.setText("Current area:")
+        self.area_select = QtWidgets.QComboBox()
+        self.area_select.setDisabled(True)
+        self.area_select.currentIndexChanged.connect(self._area_changed)
+
         time_dec_btn = QtWidgets.QPushButton("&Back", self)
         time_dec_btn.clicked.connect(lambda: self.oct_data and self.imv.jumpFrames(-1))
         time_inc_btn = QtWidgets.QPushButton("&Forward", self)
@@ -97,11 +115,18 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if OCT_LABELER_DEBUG:
             debug_btn = QtWidgets.QPushButton("Breakpoint")
             debug_btn.clicked.connect(self.breakpoint)
+
             nav_gb = wrap_groupbox(
-                "Navigation", [time_dec_btn, time_inc_btn, debug_btn]
+                "Navigation",
+                [area_label, self.area_select],
+                time_dec_btn,
+                time_inc_btn,
+                debug_btn,
             )
         else:
-            nav_gb = wrap_groupbox("Navigation", [time_dec_btn, time_inc_btn])
+            nav_gb = wrap_groupbox(
+                "Navigation", [area_label, self.area_select], time_dec_btn, time_inc_btn
+            )
 
         save_label_btn = QtWidgets.QPushButton("&Save labels", self)
         save_label_btn.clicked.connect(self._save_labels)
@@ -147,9 +172,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         labels_gb = wrap_groupbox(
             "Labels",
-            [save_label_btn, add_label_btn, duplicate_labels_btn, remove_label_btn],
-            # label_list,
-            # polyp_type_list,
+            save_label_btn,
+            add_label_btn,
+            duplicate_labels_btn,
+            remove_label_btn,
         )
 
         ### image view area
@@ -169,28 +195,20 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         remove_label_btn.clicked.connect(self._remove_last_clicked_label)
 
-        self.oct_data: OctData | None = None
+        self.oct_data: OctData | OctDataHdf5 | None = None
+        self.curr_area = 0
 
         ### Define layout
         # top horizontal layout
-        hlayout1 = QtWidgets.QHBoxLayout()
-        hlayout1.addWidget(file_dialog_btn)
-        hlayout1.addWidget(self.text_msg)
-
-        hlayout2 = QtWidgets.QHBoxLayout()
-        hlayout2.addWidget(nav_gb)
-        hlayout2.addWidget(labels_gb)
-        hlayout2.addWidget(label_list)
-        hlayout2.addWidget(polyp_type_list)
+        hlayout1 = wrap_boxlayout(file_dialog_btn, self.text_msg, boxdir="h")
+        hlayout2 = wrap_boxlayout(
+            nav_gb, labels_gb, label_list, polyp_type_list, boxdir="h"
+        )
 
         # main layout
         w = QtWidgets.QWidget()
         self.setCentralWidget(w)
-
-        layout = QtWidgets.QVBoxLayout(w)
-        layout.addLayout(hlayout1)
-        layout.addLayout(hlayout2)
-        layout.addWidget(self.imv)
+        w.setLayout(wrap_boxlayout(hlayout1, hlayout2, self.imv, boxdir="v"))
 
         self.status_msg("Ready")
 
@@ -198,6 +216,15 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         # self.oct_data = self._load_oct_data("~/box/oct invivo/10 polyps a & b/raw_data_image_polypa_cut_aligned.mat")
         # if self.oct_data:
         # self._disp_image()
+
+    def hdf5_check(self):
+        # TODO: remove after deprecating .mat
+        return isinstance(self.oct_data, OctDataHdf5)
+
+    def _area_changed(self, idx: int):
+        self.status_msg(f"Loading Area {idx + 1}")
+        self.curr_area = idx
+        self._after_load_show()
 
     def status_msg(self, msg: str):
         """
@@ -215,7 +242,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         # Get filename from File Dialog
         self.fname, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, caption="Open OCT aligned Mat file", filter="Mat files (*.mat)"
+            self, caption="Open OCT aligned Mat file", filter="(*.mat *.hdf5)"
         )
         if not self.fname:
             return
@@ -224,28 +251,58 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.status_msg(f"Loading {self.fname}")
         self.repaint()  # force render the status message
         try:
-            self.oct_data = self._load_oct_data(self.fname)
-            if self.oct_data:
-                # show images
-                self._disp_image()
-                # create LinearRegionItem if labels
-                self._imv_update_linear_regions_from_labels()
+            if Path(self.fname).suffix == ".hdf5":
+                self.oct_data = self._load_oct_data_hdf5(self.fname)
+                n_areas = len(self.oct_data.imgs)
+                self.area_select.clear()
+                self.area_select.addItems([str(i + 1) for i in range(n_areas)])
+                # This calls self._after_load_show due to the callback
+                self.area_select.setDisabled(False)
+            else:
+                self.oct_data = self._load_oct_data_mat(self.fname)
+                self._after_load_show()
+
         except Exception as e:
             print(e)
             self.error_dialog("Unknown exception while reading file. Check logs.")
             self.status_msg(f"Failed to load {self.fname}")
-        else:
-            assert self.oct_data is not None
-            self.status_msg(f"Loaded {self.fname} {self.oct_data.imgs.shape}")
+
         self.text_msg.setText("Opened " + self.fname)
 
-    def _load_oct_data(self, fname: str | Path) -> OctData | None:
+    def _after_load_show(self):
+        assert self.oct_data is not None
+        if self.hdf5_check():
+            self.status_msg(
+                f"Loaded {self.fname} area={self.curr_area} {self.oct_data.imgs[self.curr_area].shape}"
+            )
+        else:
+            self.status_msg(f"Loaded {self.fname} {self.oct_data.imgs.shape}")
+
+        # show images
+        self._disp_image()
+        # create LinearRegionItem if labels
+        self._imv_update_linear_regions_from_labels()
+
+    def _load_oct_data_hdf5(self, fname: str | Path):
         fname = Path(fname)
         assert fname.exists()
 
-        QtWidgets.QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        mat = sio.loadmat(fname)
-        QtWidgets.QApplication.restoreOverrideCursor()
+        with wait_cursor():
+            hdf5_data = OctDataHdf5.from_path(fname)
+
+        try:
+            hdf5_data.load_labels()
+        except FileNotFoundError:
+            pass
+
+        return hdf5_data
+
+    def _load_oct_data_mat(self, fname: str | Path) -> OctData | None:
+        fname = Path(fname)
+        assert fname.exists()
+
+        with wait_cursor():
+            mat = sio.loadmat(fname)
 
         keys = [s for s in mat.keys() if not s.startswith("__")]
 
@@ -272,9 +329,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         scans = np.moveaxis(scans, -1, 0)
         assert len(scans) > 0
 
-        label_path = OctData.label_path_from_img_path(fname)
         oct_data = OctData(
-            path=fname, label_path=label_path, imgs=scans, labels=[None] * len(scans)
+            path=fname,
+            label_path=OctData.label_path_from_img_path(fname),
+            imgs=scans,
+            labels=[None] * len(scans),
         )
 
         # try to load labels if they exist
@@ -294,7 +353,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     def _disp_image(self):
         assert self.oct_data is not None
-        self.imv.setImage(self.oct_data.imgs)
+        if self.hdf5_check():
+            self.imv.setImage(self.oct_data.imgs[self.curr_area])
+        else:
+            self.imv.setImage(self.oct_data.imgs)
 
     @QtCore.Slot()
     def _add_label(
@@ -307,7 +369,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if not self.oct_data:
             return
 
-        x_max = self.oct_data.imgs.shape[-1]
+        if self.hdf5_check():
+            x_max = self.oct_data.imgs[self.curr_area].shape[-1]
+        else:
+            x_max = self.oct_data.imgs.shape[-1]
 
         if rgn is None:
             rgn = (0, x_max // 2)
@@ -426,7 +491,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self._remove_displayed_linear_regions()
 
         # add current labels from oct_data
-        labels = self.oct_data.labels[ind]
+        if self.hdf5_check():
+            labels = self.oct_data.labels[self.curr_area][ind]
+        else:
+            labels = self.oct_data.labels[ind]
+
         if labels:
             for rgn, label in labels:
                 self._add_label(rgn, label, _dirty=False)
@@ -453,11 +522,19 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         ind = self.imv.currentIndex
 
         # get labes for this ind
-        assert self.oct_data
-        labels = self.oct_data.labels[ind]
-        if labels is None:
-            self.oct_data.labels[ind] = []
+        assert self.oct_data is not None
+        if self.hdf5_check():
+            labels = self.oct_data.labels[self.curr_area][ind]
+        else:
             labels = self.oct_data.labels[ind]
+
+        if labels is None:
+            if self.hdf5_check():
+                self.oct_data.labels[self.curr_area][ind] = []
+                labels = self.oct_data.labels[self.curr_area][ind]
+            else:
+                self.oct_data.labels[ind] = []
+                labels = self.oct_data.labels[ind]
         else:
             labels.clear()
 
@@ -470,6 +547,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             case ("h", False):
                 # hide current linear region labels to reveal image
                 self._remove_displayed_linear_regions()
+            case ("b", False):
+                # TODO: showing binimg doesn't work
+                self._toggle_binimg(True)
+                self.repaint()
+
         return super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event: QtGui.QKeyEvent):
@@ -477,7 +559,16 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             case ("h", False):
                 # restore linear region labels
                 self._imv_update_linear_regions_from_labels()
+            case ("b", False):
+                self._toggle_binimg(False)
+                self.repaint()
+
         return super().keyPressEvent(event)
+
+    def _toggle_binimg(self, b=True):
+        if self.hdf5_check():
+            self.oct_data.imgs = self.oct_data._binimgs if b else self.oct_data._imgs
+            self._disp_image()
 
     def _handle_dirty_close(self) -> bool:
         """

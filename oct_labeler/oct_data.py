@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import pickle
 
+import h5py
 import numpy as np
 
 
@@ -11,11 +12,55 @@ Labels = list[ONE_LABEL]
 
 
 @dataclass
+class OctDataHdf5:
+    # everything here indexed by area idx
+    imgs: list[np.ndarray]
+    _imgs: list[np.ndarray]
+    _binimgs: list[np.ndarray]
+    labels: list[list[Labels]]
+
+    hdf5path: Path
+
+    all_areas: bool = True
+
+    @classmethod
+    def from_path(cls, path: str | Path):
+        path = Path(path)
+        imgs = []
+        binimgs = []
+        labels = []
+        with h5py.File(path, "r") as f:
+            for _i in f["areas"]:
+                imgs.append(np.array(f["areas"][_i]["imgs"]))
+                binimgs.append(np.array(f["areas"][_i]["binimgs"]))
+                labels.append([None for _ in range(len(imgs[-1]))])
+        return OctDataHdf5(
+            imgs=imgs, _imgs=imgs, _binimgs=binimgs, labels=labels, hdf5path=path
+        )
+
+    def label_path(self):
+        p = self.hdf5path
+        return p.parent / (p.stem + "_labels.pkl")
+
+    def load_labels(self):
+        with open(self.label_path(), "rb") as fp:
+            self.labels = pickle.load(fp)
+
+    def save_labels(self):
+        p = self.label_path()
+        with open(p, "wb") as fp:
+            pickle.dump(self.labels, fp)
+        return p
+
+
+@dataclass
 class OctData:
     path: str | Path  # path to the image mat file
     label_path: str | Path
     imgs: np.ndarray  # ref to image array
     labels: list[Labels]  # [[((10, 20), "normal")]]
+
+    all_areas: bool = False
 
     def save_labels(self, label_path: str | Path | None = None):
         if label_path is None:
@@ -31,7 +76,7 @@ class OctData:
         if label_path is None:
             label_path = self.label_path
 
-        self.path = self.img_path_from_label_path(label_path)
+        # self.path = self.img_path_from_label_path(label_path)
 
         with open(label_path, "rb") as fp:
             self.labels = pickle.load(fp)
@@ -90,6 +135,16 @@ class OctData:
         self.labels = [[m_one(l) for l in ls] for ls in self.labels]
 
     def count(self):  # const
-        from collections import Counter
+        from collections import Counter, defaultdict
 
-        return Counter([ll[1] for l in self.labels if l for ll in l])
+        total_width = defaultdict(int)
+        count = defaultdict(int)
+        for l in self.labels:
+            if not l:
+                continue
+            for ll in l:
+                total_width[ll[1]] += abs(round(ll[0][1] - ll[0][0]))
+                count[ll[1]] += 1
+
+        c = Counter(ll[1] for l in self.labels if l for ll in l)
+        return Counter(count), Counter(total_width)

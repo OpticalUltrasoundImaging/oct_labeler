@@ -37,9 +37,19 @@ def inspect_all(recursive: bool, path: str):
 
     click.echo(f"Found {len(label_files)} label files in {path}")
 
+    from collections import Counter
+
+    c_all = Counter()
+    width_all = Counter()
     for label_file in label_files:
         oct_data = OctData.from_label_path(label_file)
-        click.echo(f"{label_file.relative_to(root)}: {oct_data.count()}")
+        count, total_width = oct_data.count()
+        c_all += count
+        width_all += total_width
+        click.echo(f"{label_file.relative_to(root)}: {count}")
+
+    click.echo(f"\nTotal count: {c_all}")
+    click.echo(f"Total width: {width_all}")
 
 
 @click.command()

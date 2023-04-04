@@ -9,6 +9,7 @@ dependencies = [
   "pyqtgraph",
   "numpy",
   "scipy",
+  "h5py",
   "click",
   "PyInstaller; platform_system=='Windows'",
 ]

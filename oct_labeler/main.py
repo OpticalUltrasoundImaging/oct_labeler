@@ -14,6 +14,8 @@ from oct_labeler.version import __version__
 from oct_labeler.single_select_dialog import SingleSelectDialog
 from oct_labeler.wait_cursor import wait_cursor
 
+from oct_labeler.qt_utils import wrap_boxlayout, wrap_groupbox
+
 
 LABELS = ["normal", "polyp", "cancer", "scar", "other"]
 POLYP_TYPES = [
@@ -55,37 +57,6 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
         super().mousePressEvent(e)
 
 
-def wrap_boxlayout(*widgets: QtWidgets.QWidget | list | tuple, boxdir="v"):
-    if boxdir == "v":
-        layout = QtWidgets.QVBoxLayout()
-        boxdir = "h"
-    else:
-        layout = QtWidgets.QHBoxLayout()
-        boxdir = "v"
-
-    for w in widgets:
-        if isinstance(w, QtWidgets.QLayout):
-            layout.addLayout(w)
-        elif isinstance(w, QtWidgets.QWidget):
-            layout.addWidget(w)
-        else:
-            assert isinstance(w, (list, tuple))
-            layout.addLayout(wrap_boxlayout(*w, boxdir=boxdir))
-    return layout
-
-
-def wrap_groupbox(name: str, *widgets: QtWidgets.QWidget | Sequence[QtWidgets.QWidget]):
-    """
-    Wrap widgets in a QGroupBox
-
-    Usage:
-    >>> wrap_groupbox("Tasks", [widget1, widget2])
-    """
-    gb = QtWidgets.QGroupBox(name)
-    gb.setLayout(wrap_boxlayout(*widgets, boxdir="v"))
-    return gb
-
-
 class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def __init__(self):
         super().__init__()
@@ -103,9 +74,16 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         ### Second horizontal layout
         area_label = QtWidgets.QLabel()
         area_label.setText("Current area:")
+        area_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.area_select = QtWidgets.QComboBox()
         self.area_select.setDisabled(True)
         self.area_select.currentIndexChanged.connect(self._area_changed)
+
+        toggle_binimg_btn = QtWidgets.QPushButton("&Toggle bin image", self)
+        self._is_bin_img = False
+        toggle_binimg_btn.clicked.connect(
+            lambda: self._toggle_binimg(not self._is_bin_img)
+        )
 
         time_dec_btn = QtWidgets.QPushButton("&Back", self)
         time_dec_btn.clicked.connect(lambda: self.oct_data and self.imv.jumpFrames(-1))
@@ -119,13 +97,18 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             nav_gb = wrap_groupbox(
                 "Navigation",
                 [area_label, self.area_select],
+                toggle_binimg_btn,
                 time_dec_btn,
                 time_inc_btn,
                 debug_btn,
             )
         else:
             nav_gb = wrap_groupbox(
-                "Navigation", [area_label, self.area_select], time_dec_btn, time_inc_btn
+                "Navigation",
+                [area_label, self.area_select],
+                toggle_binimg_btn,
+                time_dec_btn,
+                time_inc_btn,
             )
 
         save_label_btn = QtWidgets.QPushButton("&Save labels", self)
@@ -211,11 +194,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         w.setLayout(wrap_boxlayout(hlayout1, hlayout2, self.imv, boxdir="v"))
 
         self.status_msg("Ready")
-
-        ### Debug use
-        # self.oct_data = self._load_oct_data("~/box/oct invivo/10 polyps a & b/raw_data_image_polypa_cut_aligned.mat")
-        # if self.oct_data:
-        # self._disp_image()
 
     def hdf5_check(self):
         # TODO: remove after deprecating .mat
@@ -567,8 +545,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     def _toggle_binimg(self, b=True):
         if self.hdf5_check():
+            self._is_bin_img = b
             self.oct_data.imgs = self.oct_data._binimgs if b else self.oct_data._imgs
-            self._disp_image()
+            # self._disp_image()
+            idx = self.imv.currentIndex
+            self.imv.setImage(self.oct_data.imgs[self.curr_area])
+            self.imv.setCurrentIndex(idx)
+            # self._imv_time_changed(idx, None)
 
     def _handle_dirty_close(self) -> bool:
         """

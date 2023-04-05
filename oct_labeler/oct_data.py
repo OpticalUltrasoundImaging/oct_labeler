@@ -31,8 +31,8 @@ class OctDataHdf5:
         labels = []
         with h5py.File(path, "r") as f:
             for _i in f["areas"]:
-                imgs.append(np.array(f["areas"][_i]["imgs"]))
-                binimgs.append(np.array(f["areas"][_i]["binimgs"]))
+                imgs.append(f["areas"][_i]["imgs"][...])
+                binimgs.append(f["areas"][_i]["binimgs"][...])
                 labels.append([None for _ in range(len(imgs[-1]))])
         return OctDataHdf5(
             imgs=imgs, _imgs=imgs, _binimgs=binimgs, labels=labels, hdf5path=path

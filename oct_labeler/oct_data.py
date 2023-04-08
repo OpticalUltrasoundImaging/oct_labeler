@@ -7,50 +7,114 @@ import h5py
 import numpy as np
 
 
-ONE_LABEL = tuple[tuple[int, int], str]
+RANGE_T = tuple[int, int]
+NAME_T = str
+ONE_LABEL = tuple[RANGE_T, NAME_T]
 Labels = list[ONE_LABEL]
 
 
-@dataclass
+from typing import Callable, Generic, TypeVar
+
+VT = TypeVar("VT")
+
+
+class LazyList(Generic[VT]):
+    def __init__(
+        self, n, get_func: Callable[[int], VT], lst: list[VT | None] | None = None
+    ):
+        if lst is None:
+            self._l = [None] * n
+        else:
+            self._l = lst
+        self._get_func = get_func
+
+    def __len__(self):
+        return len(self._l)
+
+    def __getitem__(self, i: int) -> VT:
+        if self._l[i] is None:
+            self._l[i] = self._get_func(i)
+        return self._l[i]
+
+
+from functools import partial
+
+
 class OctDataHdf5:
-    # everything here indexed by area idx
-    imgs: list[np.ndarray]
-    _imgs: list[np.ndarray]
-    _binimgs: list[np.ndarray]
-    labels: list[list[Labels]]
+    def __init__(self, hdf5path: str | Path):
+        self.hdf5path = Path(hdf5path)
+        self._hdf5file = h5py.File(hdf5path, "r")
 
-    hdf5path: Path
+        self.n_areas = len(self._hdf5file["areas"])
 
-    all_areas: bool = True
+        self._imgs: list[np.ndarray | None] = [None] * self.n_areas
+        self._binimgs: list[np.ndarray | None] = [None] * self.n_areas
 
-    @classmethod
-    def from_path(cls, path: str | Path):
-        path = Path(path)
-        imgs = []
-        binimgs = []
-        labels = []
-        with h5py.File(path, "r") as f:
-            for _i in f["areas"]:
-                imgs.append(f["areas"][_i]["imgs"][...])
-                binimgs.append(f["areas"][_i]["binimgs"][...])
-                labels.append([None for _ in range(len(imgs[-1]))])
-        return OctDataHdf5(
-            imgs=imgs, _imgs=imgs, _binimgs=binimgs, labels=labels, hdf5path=path
-        )
+        # labels[area_idx][img_idx]
+        self._labels: list[list[Labels] | None]
 
+        def _get_area(name: str, i: int) -> np.ndarray:
+            return self._hdf5file["areas"][str(i + 1)][name][...]
+
+        self.imgs = LazyList(self.n_areas, partial(_get_area, "imgs"))
+        self.binimgs = LazyList(self.n_areas, partial(_get_area, "binimgs"))
+
+        self.load_labels()
+
+        def _init_labels(i: int) -> list[Labels]:
+            return [None] * len(self.imgs[i])
+
+        self.labels = LazyList(self.n_areas, _init_labels, self._labels)
+
+    def __del__(self):
+        self._hdf5file.close()
+
+    @property
     def label_path(self):
         p = self.hdf5path
         return p.parent / (p.stem + "_labels.pkl")
 
     def load_labels(self):
-        with open(self.label_path(), "rb") as fp:
-            self.labels = pickle.load(fp)
+        p = self.label_path
+        if p.exists():
+            with open(self.label_path, "rb") as fp:
+                self._labels = pickle.load(fp)
+        else:
+            print(f"{self.__class__.__name__}: Label file not found: {p}")
+            self._labels = [None] * self.n_areas
 
     def save_labels(self):
-        p = self.label_path()
+        p = self.label_path
         with open(p, "wb") as fp:
-            pickle.dump(self.labels, fp)
+            pickle.dump(self._labels, fp)
         return p
+
+
+def _merge_neighbours(ls: list[ONE_LABEL]):
+    prev: ONE_LABEL | None = None
+    prev = ls[0]
+    for curr in ls[1:]:
+        if prev is None:
+            prev = curr
+            continue
+
+        prev_r = prev[0]
+        curr_r = curr[0]
+        prev_name = prev[1]
+        curr_name = curr[1]
+
+        # If prev and curr have different labels,
+        # or if prev and curr don't overlap, return the prev label,
+        # and set curr to prev.
+        if prev_name != curr_name or prev_r[1] < curr_r[0] - 1:
+            yield prev
+            prev = curr
+
+        # Merge prev and curr
+        prev_r[1] = curr_r[1]
+        continue
+
+    yield prev
 
 
 @dataclass
@@ -97,6 +161,18 @@ class OctData:
 
     @classmethod
     def from_mat_path(cls, fname: str | Path) -> OctData:
+        scans = cls.load_imgs(fname)
+
+        oct_data = OctData(
+            path=fname,
+            label_path=cls.label_path_from_img_path(fname),
+            imgs=scans,
+            labels=[None] * len(scans),
+        )
+        return oct_data
+
+    @staticmethod
+    def load_imgs(fname):
         import scipy.io as sio
 
         mat = sio.loadmat(fname)
@@ -109,14 +185,10 @@ class OctData:
         scans = mat[key]
         scans = np.moveaxis(scans, -1, 0)
         assert len(scans) > 0
+        return scans
 
-        oct_data = OctData(
-            path=fname,
-            label_path=cls.label_path_from_img_path(fname),
-            imgs=scans,
-            labels=[None] * len(scans),
-        )
-        return oct_data
+    def load_imgs_(self):
+        self.imgs = self.load_imgs(self.img_path_from_label_path(self.label_path))
 
     @staticmethod
     def label_path_from_img_path(path: str | Path, ext=".pkl") -> Path:
@@ -128,11 +200,41 @@ class OctData:
         label_path = Path(label_path)
         return label_path.parent / (label_path.stem.rsplit("_label", 1)[0] + ".mat")
 
-    def shift_x(self, dx):
-        def m_one(l: ONE_LABEL):
-            return ((l[0][0] + dx, l[0][1] + dx), l[1])
+    def shift_x(self, dx: int | list[int]):
+        if self.imgs is None:
+            xlim = 2000
+        else:
+            xlim = self.imgs.shape[-1]
 
-        self.labels = [[m_one(l) for l in ls] for ls in self.labels]
+        def _s(x: int, dx: int):
+            return (round(x) + dx + xlim) % xlim
+
+        def mv_one(l: ONE_LABEL, dx: int):
+            (x1, x2), name = l
+            x1, x2 = _s(x1, dx), _s(x2, dx)
+            if x1 < x2:
+                return (((x1, x2), name),)
+            elif x1 > x2:
+                return (((x1, xlim - 1), name), ((0, x2), name))
+            raise ValueError("x1 == x2")
+
+        flatten = lambda l: sorted(x for ll in l for x in ll)
+
+        new_labels = [None] * len(self.labels)
+        if isinstance(dx, int):
+            for i, ls in enumerate(self.labels):
+                if ls is not None:
+                    new_labels[i] = flatten(mv_one(l, dx) for l in ls)
+        else:
+            for i, ls in enumerate(self.labels):
+                if ls is not None:
+                    new_labels[i] = flatten(mv_one(l, dx[i]) for l in ls)
+
+        # TODO: merge two labels if they overlap
+        for i, ls in enumerate(new_labels):
+            new_labels[i] = tuple(_merge_neighbours(ls))
+
+        self.labels = new_labels
 
     def count(self):  # const
         from collections import Counter, defaultdict

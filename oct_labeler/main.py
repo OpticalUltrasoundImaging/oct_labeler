@@ -266,12 +266,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         assert fname.exists()
 
         with wait_cursor():
-            hdf5_data = OctDataHdf5.from_path(fname)
-
-        try:
-            hdf5_data.load_labels()
-        except FileNotFoundError:
-            pass
+            hdf5_data = OctDataHdf5(fname)
 
         return hdf5_data
 
@@ -525,10 +520,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             case ("h", False):
                 # hide current linear region labels to reveal image
                 self._remove_displayed_linear_regions()
-            case ("b", False):
-                # TODO: showing binimg doesn't work
-                self._toggle_binimg(True)
-                self.repaint()
+            # case ("t", False):
+            # self._toggle_binimg(True)
+            # self.repaint()
 
         return super().keyPressEvent(event)
 
@@ -537,9 +531,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             case ("h", False):
                 # restore linear region labels
                 self._imv_update_linear_regions_from_labels()
-            case ("b", False):
-                self._toggle_binimg(False)
-                self.repaint()
+            # case ("t", False):
+            # self._toggle_binimg(False)
+            # self.repaint()
 
         return super().keyPressEvent(event)
 

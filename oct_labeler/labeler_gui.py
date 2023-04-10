@@ -596,7 +596,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         print("")
 
 
-def main():
+def gui_main():
     import sys
     import os
 

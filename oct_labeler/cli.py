@@ -1,7 +1,7 @@
 from pathlib import Path
 import click
 
-from oct_labeler.main import main
+from oct_labeler.labeler_gui import gui_main
 from oct_labeler.oct_data import OctData
 from oct_labeler.version import __version__
 
@@ -13,7 +13,7 @@ def cli():
 
 @click.command()
 def gui():
-    main()
+    gui_main()
 
 
 @click.command()

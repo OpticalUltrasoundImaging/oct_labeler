@@ -246,7 +246,7 @@ class OctData:
         # TODO: merge two labels if they overlap
         for i, ls in enumerate(new_labels):
             if ls:
-                new_labels[i] = tuple(_merge_neighbours(ls))
+                new_labels[i] = sorted(_merge_neighbours(ls))
 
         self.labels = new_labels
 

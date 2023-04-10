@@ -432,7 +432,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         assert self.oct_data
 
         ind = self.imv.currentIndex
-        labels = self.oct_data.labels  # ref
+
+        if self.hdf5_check():
+            labels = self.oct_data.labels[self.curr_area]  # ref
+        else:
+            labels = self.oct_data.labels  # ref
 
         if ind > 0 and labels[ind - 1]:
             labels[ind] = deepcopy(labels[ind - 1])

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Iterable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 import pickle
@@ -35,6 +36,9 @@ class LazyList(Generic[VT]):
         if self.list[i] is None:
             self.list[i] = self._get_func(i)
         return self.list[i]
+
+    def __setitem__(self, i: int, v: VT):
+        self.list[i] = v
 
 
 from functools import partial
@@ -102,11 +106,13 @@ def _merge_neighbours(ls: list[ONE_LABEL]):
         # If prev and curr have different labels,
         # or if prev and curr don't overlap, return the prev label,
         # and set curr to prev.
-        if prev_name != curr_name or prev_r[1] < curr_r[0] - 1:
+        if prev_name != curr_name or prev_r[1] <= curr_r[0]:
             yield prev
             prev = curr
+            continue
 
         # Merge prev and curr
+        breakpoint()
         prev_r[1] = curr_r[1]
         continue
 
@@ -196,7 +202,7 @@ class OctData:
         label_path = Path(label_path)
         return label_path.parent / (label_path.stem.rsplit("_label", 1)[0] + ".mat")
 
-    def shift_x(self, dx: int | list[int]):
+    def shift_x(self, dx: int | Iterable[int] | Callable[[int], int]):
         if self.imgs is None:
             xlim = 2000
         else:
@@ -216,19 +222,31 @@ class OctData:
 
         flatten = lambda l: sorted(x for ll in l for x in ll)
 
+        from tqdm import tqdm
+
         new_labels = [None] * len(self.labels)
+
+        def _tqdm(it):
+            return tqdm(it, total=len(self.labels), desc="shift_x")
+
         if isinstance(dx, int):
-            for i, ls in enumerate(self.labels):
+            for i, ls in _tqdm(enumerate(self.labels)):
                 if ls is not None:
                     new_labels[i] = flatten(mv_one(l, dx) for l in ls)
-        else:
-            for i, ls in enumerate(self.labels):
+        elif isinstance(dx, Iterable):
+            for i, (ls, _dx) in _tqdm(enumerate(zip(self.labels, dx))):
                 if ls is not None:
-                    new_labels[i] = flatten(mv_one(l, dx[i]) for l in ls)
+                    new_labels[i] = flatten(mv_one(l, _dx) for l in ls)
+        elif callable(dx):
+            for i, ls in _tqdm(enumerate(self.labels)):
+                if ls is not None:
+                    _dx = dx(i)
+                    new_labels[i] = flatten(mv_one(l, _dx) for l in ls)
 
         # TODO: merge two labels if they overlap
         for i, ls in enumerate(new_labels):
-            new_labels[i] = tuple(_merge_neighbours(ls))
+            if ls:
+                new_labels[i] = tuple(_merge_neighbours(ls))
 
         self.labels = new_labels
 

@@ -251,7 +251,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         assert self.oct_data is not None
         if self.hdf5_check():
             self.status_msg(
-                f"Loaded {self.fname} area={self.curr_area} {self.oct_data.imgs[self.curr_area].shape}"
+                f"Loaded {self.fname} area={self.curr_area + 1} {self.oct_data.imgs[self.curr_area].shape}"
             )
         else:
             self.status_msg(f"Loaded {self.fname} {self.oct_data.imgs.shape}")

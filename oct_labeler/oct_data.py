@@ -23,18 +23,18 @@ class LazyList(Generic[VT]):
         self, n, get_func: Callable[[int], VT], lst: list[VT | None] | None = None
     ):
         if lst is None:
-            self._l = [None] * n
+            self.list = [None] * n
         else:
-            self._l = lst
+            self.list = lst
         self._get_func = get_func
 
     def __len__(self):
-        return len(self._l)
+        return len(self.list)
 
     def __getitem__(self, i: int) -> VT:
-        if self._l[i] is None:
-            self._l[i] = self._get_func(i)
-        return self._l[i]
+        if self.list[i] is None:
+            self.list[i] = self._get_func(i)
+        return self.list[i]
 
 
 from functools import partial
@@ -47,17 +47,16 @@ class OctDataHdf5:
 
         self.n_areas = len(self._hdf5file["areas"])
 
-        self._imgs: list[np.ndarray | None] = [None] * self.n_areas
-        self._binimgs: list[np.ndarray | None] = [None] * self.n_areas
-
         # labels[area_idx][img_idx]
         self._labels: list[list[Labels] | None]
 
         def _get_area(name: str, i: int) -> np.ndarray:
+            # Slicing a h5py dataset produces an np.ndarray
             return self._hdf5file["areas"][str(i + 1)][name][...]
 
-        self.imgs = LazyList(self.n_areas, partial(_get_area, "imgs"))
-        self.binimgs = LazyList(self.n_areas, partial(_get_area, "binimgs"))
+        self._imgs = LazyList(self.n_areas, partial(_get_area, "imgs"))
+        self._binimgs = LazyList(self.n_areas, partial(_get_area, "binimgs"))
+        self.imgs = self._imgs
 
         self.load_labels()
 
@@ -65,9 +64,6 @@ class OctDataHdf5:
             return [None] * len(self.imgs[i])
 
         self.labels = LazyList(self.n_areas, _init_labels, self._labels)
-
-    def __del__(self):
-        self._hdf5file.close()
 
     @property
     def label_path(self):

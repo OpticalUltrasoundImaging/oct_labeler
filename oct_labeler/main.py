@@ -327,7 +327,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def _disp_image(self):
         assert self.oct_data is not None
         if self.hdf5_check():
-            self.imv.setImage(self.oct_data.imgs[self.curr_area])
+            with wait_cursor():
+                self.imv.setImage(self.oct_data.imgs[self.curr_area])
         else:
             self.imv.setImage(self.oct_data.imgs)
 
@@ -539,13 +540,16 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     def _toggle_binimg(self, b=True):
         if self.hdf5_check():
-            self._is_bin_img = b
-            self.oct_data.imgs = self.oct_data._binimgs if b else self.oct_data._imgs
-            # self._disp_image()
-            idx = self.imv.currentIndex
-            self.imv.setImage(self.oct_data.imgs[self.curr_area])
-            self.imv.setCurrentIndex(idx)
-            # self._imv_time_changed(idx, None)
+            with wait_cursor():
+                self._is_bin_img = b
+                self.oct_data.imgs = (
+                    self.oct_data._binimgs if b else self.oct_data._imgs
+                )
+                # self._disp_image()
+                idx = self.imv.currentIndex
+                self.imv.setImage(self.oct_data.imgs[self.curr_area])
+                self.imv.setCurrentIndex(idx)
+                # self._imv_time_changed(idx, None)
 
     def _handle_dirty_close(self) -> bool:
         """

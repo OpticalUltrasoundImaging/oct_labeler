@@ -16,7 +16,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.scripts]
-oct-label = "oct_labeler.cli:cli"
+oct_labeler = "oct_labeler.cli:cli"
 
 [tools.setuptools.dynamic]
 version = {attr = "oct_labeler.__version__"}

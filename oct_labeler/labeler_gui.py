@@ -2,6 +2,7 @@ from typing import Sequence
 from pathlib import Path
 from copy import deepcopy
 
+from PIL import Image
 from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6.QtCore import Qt
 import pyqtgraph as pg
@@ -90,6 +91,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         time_inc_btn = QtWidgets.QPushButton("&Forward", self)
         time_inc_btn.clicked.connect(lambda: self.oct_data and self.imv.jumpFrames(1))
 
+        export_img_btn = QtWidgets.QPushButton("&Export Image", self)
+        export_img_btn.clicked.connect(self._export_image)
+
         if OCT_LABELER_DEBUG:
             debug_btn = QtWidgets.QPushButton("Breakpoint")
             debug_btn.clicked.connect(self.breakpoint)
@@ -100,6 +104,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 toggle_binimg_btn,
                 time_dec_btn,
                 time_inc_btn,
+                export_img_btn,
                 debug_btn,
             )
         else:
@@ -109,6 +114,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 toggle_binimg_btn,
                 time_dec_btn,
                 time_inc_btn,
+                export_img_btn,
             )
 
         save_label_btn = QtWidgets.QPushButton("&Save labels", self)
@@ -246,6 +252,28 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             self.status_msg(f"Failed to load {self.fname}")
 
         self.text_msg.setText("Opened " + self.fname)
+
+    @QtCore.Slot()
+    def _export_image(self):
+        # Currently only implemented for HDF5
+        assert self.hdf5_check()
+        area_idx = self.curr_area
+        frame_idx = int(self.imv.currentIndex)
+
+        imgs = self.oct_data.imgs[area_idx]
+        img = imgs[frame_idx]
+
+        pid = self.oct_data.hdf5path.parent.stem
+
+        path = Path.home() / "Desktop"
+        path /= f"export_p{pid}_a{area_idx}_f{frame_idx}{'_b' if self._is_bin_img else ''}.png"
+        if self._is_bin_img:
+            pil_img = Image.fromarray(img, "RGB")
+            pil_img.save(path)
+        else:
+            pil_img = Image.fromarray(img, "L")
+            pil_img.save(path)
+        self.status_msg(f"Exported image to {path}")
 
     def _after_load_show(self):
         assert self.oct_data is not None

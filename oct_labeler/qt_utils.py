@@ -16,13 +16,16 @@ def wrap_boxlayout(*widgets: QtWidgets.QWidget | list | tuple, boxdir="v"):
             layout.addLayout(w)
         elif isinstance(w, QtWidgets.QWidget):
             layout.addWidget(w)
-        else:
-            assert isinstance(w, (list, tuple))
+        elif isinstance(w, (list, tuple)):
             layout.addLayout(wrap_boxlayout(*w, boxdir=boxdir))
+        else:
+            raise TypeError(f"Unknown type for widget {w}")
     return layout
 
 
-def wrap_groupbox(name: str, *widgets: QtWidgets.QWidget | Sequence[QtWidgets.QWidget]):
+def wrap_groupbox(
+    name: str, *widgets: QtWidgets.QWidget | Sequence[QtWidgets.QWidget], boxdir="v"
+):
     """
     Wrap widgets in a QGroupBox
 
@@ -30,5 +33,5 @@ def wrap_groupbox(name: str, *widgets: QtWidgets.QWidget | Sequence[QtWidgets.QW
     >>> wrap_groupbox("Tasks", [widget1, widget2])
     """
     gb = QtWidgets.QGroupBox(name)
-    gb.setLayout(wrap_boxlayout(*widgets, boxdir="v"))
+    gb.setLayout(wrap_boxlayout(*widgets, boxdir=boxdir))
     return gb

@@ -185,7 +185,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         remove_label_btn.clicked.connect(self._remove_last_clicked_label)
 
         self.oct_data: OctData | OctDataHdf5 | None = None
-        self.curr_area = 0
+        self.curr_area = 1
 
         ### Define layout
         # top horizontal layout
@@ -378,6 +378,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         if rgn is None:
             rgn = (0, x_max // 2)
+        else:
+            rgn = int(rgn[0]), int(rgn[1])
 
         if label is None:
             label = self.label_list.get_checked_str()

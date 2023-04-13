@@ -10,14 +10,14 @@ import numpy as np
 
 from .checkable_list import CheckableList
 from ..oct_data import OctData, OctDataHdf5
-from ..version import __version__
+from .. import __version__
 from .single_select_dialog import SingleSelectDialog
 from .wait_cursor import wait_cursor
 
 from .qt_utils import wrap_boxlayout, wrap_groupbox
 
 
-APP_NAME = f"OCT Image Labeler ({'.'.join((str(i) for i in __version__))})"
+APP_NAME = f"OCT Image Labeler ({__version__})"
 
 LABELS = ["normal", "polyp", "cancer", "scar", "other"]
 POLYP_TYPES = [

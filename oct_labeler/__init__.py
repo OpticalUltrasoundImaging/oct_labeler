@@ -1,1 +1,3 @@
-from oct_labeler.version import __version__
+import importlib.metadata
+
+__version__ = importlib.metadata.version(__package__)

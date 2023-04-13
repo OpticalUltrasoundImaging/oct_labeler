@@ -69,6 +69,10 @@ class OctDataHdf5:
 
         self.labels = LazyList(self.n_areas, _init_labels, self._labels)
 
+    @classmethod
+    def from_label_path(cls, p: Path):
+        return cls(p.parent / p.name.replace("_labels.pkl", ".hdf5"))
+
     @property
     def label_path(self):
         p = self.hdf5path

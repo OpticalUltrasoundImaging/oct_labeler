@@ -17,6 +17,8 @@ from .wait_cursor import wait_cursor
 from .qt_utils import wrap_boxlayout, wrap_groupbox
 
 
+APP_NAME = f"OCT Image Labeler ({'.'.join((str(i) for i in __version__))})"
+
 LABELS = ["normal", "polyp", "cancer", "scar", "other"]
 POLYP_TYPES = [
     ("TA", "Tubular adenoma"),
@@ -60,6 +62,7 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
 class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def __init__(self):
         super().__init__()
+        self.setWindowTitle(APP_NAME)
 
         # flag to mark if there are unsaved changes
         self.dirty: bool = False
@@ -647,9 +650,7 @@ def gui_main():
         sys.argv += ["-platform", "windows:darkmode=2"]
 
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationDisplayName(
-        f"OCT Image Labeler ({'.'.join((str(i) for i in __version__))})"
-    )
+    app.setApplicationDisplayName(APP_NAME)
 
     if os.name == "posix":
         # Dark mode for posix

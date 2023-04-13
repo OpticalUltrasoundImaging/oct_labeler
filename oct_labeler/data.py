@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import Iterable, Callable
+from typing import Callable, Iterable, Sequence, TypeVar
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 import pickle
 
@@ -15,12 +16,10 @@ AREA_LABELS = list[FRAME_LABEL | None]
 AREAS_LABELS = list[AREA_LABELS | None]
 
 
-from typing import Callable, Generic, TypeVar
-
 VT = TypeVar("VT")
 
 
-class LazyList(Generic[VT]):
+class LazyList(Sequence[VT]):
     def __init__(self, n, get_func: Callable[[int], VT], lst: list[VT | None] = []):
         self.list: list[VT | None] = lst if lst else [None] * n
         self._get_func = get_func
@@ -30,15 +29,12 @@ class LazyList(Generic[VT]):
 
     def __getitem__(self, i: int) -> VT:
         item = self.list[i]
-        if not item:
+        if item is None:
             item = self.list[i] = self._get_func(i)
         return item
 
     def __setitem__(self, i: int, v: VT):
         self.list[i] = v
-
-
-from functools import partial
 
 
 class OctDataHdf5:
@@ -48,9 +44,6 @@ class OctDataHdf5:
 
         self.n_areas = len(self._hdf5file["areas"])  # type: ignore
 
-        # labels[area_idx][img_idx]
-        self._labels: AREAS_LABELS
-
         def _get_area(name: str, i: int) -> np.ndarray:
             # Slicing a h5py dataset produces an np.ndarray
             return self._hdf5file["areas"][str(i + 1)][name][...]  # type: ignore
@@ -59,12 +52,15 @@ class OctDataHdf5:
         self._binimgs = LazyList(self.n_areas, partial(_get_area, "binimgs"))
         self.imgs: LazyList = self._imgs
 
-        self.load_labels()
+        # labels[area_idx][img_idx]
+        self._labels: AREAS_LABELS = self._load_labels()
 
         def _init_labels(i: int) -> AREA_LABELS:
             return [None] * len(self.imgs[i])  # type: ignore
 
-        self.labels = LazyList(self.n_areas, _init_labels, self._labels)
+        self.labels: LazyList[AREA_LABELS] = LazyList(
+            self.n_areas, _init_labels, self._labels
+        )
 
     @classmethod
     def from_label_path(cls, p: Path):
@@ -75,14 +71,15 @@ class OctDataHdf5:
         p = self.hdf5path
         return p.parent / (p.stem + "_labels.pkl")
 
-    def load_labels(self):
+    def _load_labels(self) -> AREAS_LABELS:
         p = self.label_path
         if p.exists():
             with open(self.label_path, "rb") as fp:
-                self._labels = pickle.load(fp)
-        else:
-            print(f"{self.__class__.__name__}: Label file not found: {p}")
-            self._labels = [None] * self.n_areas
+                lbls = pickle.load(fp)
+                return lbls
+
+        print(f"{self.__class__.__name__}: Label file not found: {p}")
+        return [None] * self.n_areas
 
     def save_labels(self):
         p = self.label_path

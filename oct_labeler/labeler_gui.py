@@ -206,6 +206,14 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         return isinstance(self.oct_data, OctDataHdf5)
 
     def _area_changed(self, idx: int):
+        """
+        Handle when the area_select QComboBox is changed (by the user or programmatically).
+
+            The item's index is passed or -1 if the combobox becomes empty or the currentIndex was reset.
+        """
+        if idx == -1:  # updated programmatically
+            return
+
         self.status_msg(f"Loading Area {idx + 1}")
         self.curr_area = idx
         self._after_load_show()
@@ -255,15 +263,16 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     @QtCore.Slot()
     def _export_image(self):
-        # Currently only implemented for HDF5
-        assert self.hdf5_check()
-        area_idx = self.curr_area
         frame_idx = int(self.imv.currentIndex)
 
-        imgs = self.oct_data.imgs[area_idx]
-        img = imgs[frame_idx]
-
-        pid = self.oct_data.hdf5path.parent.stem
+        if self.hdf5_check():  # HDF5 version
+            area_idx = self.curr_area
+            img = self.oct_data.imgs[area_idx][frame_idx]
+            pid = self.oct_data.hdf5path.parent.stem
+        else:  # Old mat format
+            area_idx = 0
+            img = self.oct_data.imgs[frame_idx]
+            pid = self.oct_data.path.parent.stem.replace(" ", "-")
 
         path = Path.home() / "Desktop"
         path /= f"export_p{pid}_a{area_idx}_f{frame_idx}{'_b' if self._is_bin_img else ''}.png"

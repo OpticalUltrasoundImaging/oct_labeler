@@ -651,6 +651,25 @@ def gui_main():
         f"OCT Image Labeler ({'.'.join((str(i) for i in __version__))})"
     )
 
+    if os.name == "posix":
+        # Dark mode for posix
+        # https://doc.qt.io/qt-6/qpalette.html
+        QtWidgets.QApplication.setStyle(QtWidgets.QStyleFactory.create("Fusion"))
+        p = app.palette()
+        QPalette = QtGui.QPalette
+        QColor = QtGui.QColor
+        # Background
+        p.setColor(QPalette.Window, QColor(53, 53, 53))
+        p.setColor(QPalette.Base, QColor(53, 53, 53))
+        p.setColor(QPalette.Button, QColor(53, 53, 53))
+        p.setColor(QPalette.Highlight, QColor(142, 45, 197))
+        # Foreground
+        p.setColor(QPalette.WindowText, QColor(255, 255, 255))
+        p.setColor(QPalette.ButtonText, QColor(255, 255, 255))
+        p.setColor(QPalette.Text, QColor(255, 255, 255))
+
+        app.setPalette(p)
+
     win = AppWin()
     win.showMaximized()
 

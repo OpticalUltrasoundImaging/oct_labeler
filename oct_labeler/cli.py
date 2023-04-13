@@ -1,7 +1,7 @@
 from pathlib import Path
 import click
 
-from oct_labeler.labeler_gui import gui_main
+from oct_labeler.gui import gui_main
 from oct_labeler.oct_data import OctData
 from oct_labeler.version import __version__
 

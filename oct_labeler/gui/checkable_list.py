@@ -1,7 +1,6 @@
 from typing import TypeGuard
-
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 
 
 def is_str_list(l: list) -> TypeGuard[list[str]]:

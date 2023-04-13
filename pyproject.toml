@@ -11,6 +11,7 @@ dependencies = [
   "scipy",
   "h5py",
   "click",
+  "Pillow",
   "PyInstaller; platform_system=='Windows'",
 ]
 dynamic = ["version"]

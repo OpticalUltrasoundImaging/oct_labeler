@@ -1,5 +1,4 @@
 from typing import Sequence
-
 from PySide6 import QtWidgets
 
 

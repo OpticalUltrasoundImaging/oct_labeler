@@ -1,4 +1,3 @@
-from typing import Sequence
 from pathlib import Path
 from copy import deepcopy
 
@@ -9,13 +8,13 @@ import pyqtgraph as pg
 import scipy.io as sio
 import numpy as np
 
-from oct_labeler.checkable_list import CheckableList
-from oct_labeler.oct_data import OctData, OctDataHdf5
-from oct_labeler.version import __version__
-from oct_labeler.single_select_dialog import SingleSelectDialog
-from oct_labeler.wait_cursor import wait_cursor
+from .checkable_list import CheckableList
+from ..oct_data import OctData, OctDataHdf5
+from ..version import __version__
+from .single_select_dialog import SingleSelectDialog
+from .wait_cursor import wait_cursor
 
-from oct_labeler.qt_utils import wrap_boxlayout, wrap_groupbox
+from .qt_utils import wrap_boxlayout, wrap_groupbox
 
 
 LABELS = ["normal", "polyp", "cancer", "scar", "other"]
@@ -168,7 +167,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         )
 
         ### image view area
-        self.imv = pg.ImageView(self, name="ImageView")
+        self.imv = pg.ImageView(name="ImageView")
         self.imv.sigTimeChanged.connect(self._imv_time_changed)
 
         self.curr_label_region: LinearRegionItemClickable | None = None

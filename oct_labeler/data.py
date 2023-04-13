@@ -8,10 +8,11 @@ import h5py
 import numpy as np
 
 
-RANGE_T = tuple[int, int]
-NAME_T = str
-ONE_LABEL = tuple[RANGE_T, NAME_T]
-Labels = list[ONE_LABEL]
+RANGE_T = tuple[int, int]  # (1, 1)
+ONE_LABEL = tuple[RANGE_T, str]
+FRAME_LABEL = list[ONE_LABEL]
+AREA_LABELS = list[FRAME_LABEL | None]
+AREAS_LABELS = list[AREA_LABELS | None]
 
 
 from typing import Callable, Generic, TypeVar
@@ -20,22 +21,18 @@ VT = TypeVar("VT")
 
 
 class LazyList(Generic[VT]):
-    def __init__(
-        self, n, get_func: Callable[[int], VT], lst: list[VT | None] | None = None
-    ):
-        if lst is None:
-            self.list = [None] * n
-        else:
-            self.list = lst
+    def __init__(self, n, get_func: Callable[[int], VT], lst: list[VT | None] = []):
+        self.list: list[VT | None] = lst if lst else [None] * n
         self._get_func = get_func
 
     def __len__(self):
         return len(self.list)
 
     def __getitem__(self, i: int) -> VT:
-        if self.list[i] is None:
-            self.list[i] = self._get_func(i)
-        return self.list[i]
+        item = self.list[i]
+        if not item:
+            item = self.list[i] = self._get_func(i)
+        return item
 
     def __setitem__(self, i: int, v: VT):
         self.list[i] = v
@@ -49,23 +46,23 @@ class OctDataHdf5:
         self.hdf5path = Path(hdf5path)
         self._hdf5file = h5py.File(hdf5path, "r")
 
-        self.n_areas = len(self._hdf5file["areas"])
+        self.n_areas = len(self._hdf5file["areas"])  # type: ignore
 
         # labels[area_idx][img_idx]
-        self._labels: list[list[Labels] | None]
+        self._labels: AREAS_LABELS
 
         def _get_area(name: str, i: int) -> np.ndarray:
             # Slicing a h5py dataset produces an np.ndarray
-            return self._hdf5file["areas"][str(i + 1)][name][...]
+            return self._hdf5file["areas"][str(i + 1)][name][...]  # type: ignore
 
         self._imgs = LazyList(self.n_areas, partial(_get_area, "imgs"))
         self._binimgs = LazyList(self.n_areas, partial(_get_area, "binimgs"))
-        self.imgs = self._imgs
+        self.imgs: LazyList = self._imgs
 
         self.load_labels()
 
-        def _init_labels(i: int) -> list[Labels]:
-            return [None] * len(self.imgs[i])
+        def _init_labels(i: int) -> AREA_LABELS:
+            return [None] * len(self.imgs[i])  # type: ignore
 
         self.labels = LazyList(self.n_areas, _init_labels, self._labels)
 
@@ -94,7 +91,7 @@ class OctDataHdf5:
         return p
 
 
-def _merge_neighbours(ls: list[ONE_LABEL]):
+def _merge_neighbours(ls: FRAME_LABEL):
     prev: ONE_LABEL | None = None
     prev = ls[0]
     for curr in ls[1:]:
@@ -117,7 +114,8 @@ def _merge_neighbours(ls: list[ONE_LABEL]):
 
         # Merge prev and curr
         breakpoint()
-        prev_r[1] = curr_r[1]
+        merged_r = (prev_r[0], curr_r[1])
+        prev = (merged_r, prev[1])
         continue
 
     yield prev
@@ -125,86 +123,77 @@ def _merge_neighbours(ls: list[ONE_LABEL]):
 
 @dataclass
 class OctData:
-    path: str | Path  # path to the image mat file
-    label_path: str | Path
-    imgs: np.ndarray  # ref to image array
-    labels: list[Labels]  # [[((10, 20), "normal")]]
+    path: Path  # path to the image mat file
+    labels: AREA_LABELS  # [[((10, 20), "normal")]]
 
     all_areas: bool = False
 
-    def save_labels(self, label_path: str | Path | None = None):
-        if label_path is None:
-            label_path = self.label_path
-        self.path = self.img_path_from_label_path(label_path)
+    @property
+    def imgs(self) -> np.ndarray:
+        if hasattr(self, "_imgs"):
+            return self._imgs
+        self._imgs = self._load_imgs(self.path)
+        return self._imgs
 
+    @property
+    def label_path(self) -> Path:
+        p = self.path
+        return p.parent / (p.stem + "_label.pkl")
+
+    def save_labels(self):
+        label_path = self.label_path
         with open(label_path, "wb") as fp:
             pickle.dump(self.labels, fp)
-
         return label_path
 
-    def load_labels(self, label_path: str | Path | None = None):
-        if label_path is None:
-            label_path = self.label_path
-
-        # self.path = self.img_path_from_label_path(label_path)
-
-        with open(label_path, "rb") as fp:
-            self.labels = pickle.load(fp)
+    def load_labels(self):
+        p = self.label_path
+        if p.exists():
+            with open(self.label_path, "rb") as fp:
+                self.labels = pickle.load(fp)
 
     @classmethod
-    def from_label_path(cls, label_path: str | Path) -> OctData:
+    def from_label_path(cls, label_path: str | Path):
         """
         Note: this doesn't load the images, and just load the labels for manipulation
         """
         oct_data = OctData(
             path=cls.img_path_from_label_path(label_path),
-            label_path=label_path,
-            imgs=None,
-            labels=None,
+            labels=[],  # load below with .load_labels()
         )
         oct_data.load_labels()
         return oct_data
 
     @classmethod
-    def from_mat_path(cls, fname: str | Path) -> OctData:
-        scans = cls.load_imgs(fname)
-
+    def from_mat_path(cls, p: str | Path, _imgs: np.ndarray | None = None):
         oct_data = OctData(
-            path=fname,
-            label_path=cls.label_path_from_img_path(fname),
-            imgs=scans,
-            labels=[None] * len(scans),
+            path=Path(p),
+            labels=[],  # load below with .load_labels()
         )
+        oct_data.load_labels()
+        if _imgs is not None:
+            oct_data._imgs = _imgs
         return oct_data
 
     @staticmethod
-    def load_imgs(fname):
+    def _load_imgs(fname):
         import scipy.io as sio
 
         mat = sio.loadmat(fname)
 
         keys = [s for s in mat.keys() if not s.startswith("__")]
-        print(f"Available keys in data file: {keys}")
         key = "I_updated"
-        assert key in keys
+        assert key in keys, f"Available keys in data file: {keys}"
 
         scans = mat[key]
         scans = np.moveaxis(scans, -1, 0)
         assert len(scans) > 0
         return scans
 
-    def load_imgs_(self):
-        self.imgs = self.load_imgs(self.img_path_from_label_path(self.label_path))
-
     @staticmethod
-    def label_path_from_img_path(path: str | Path, ext=".pkl") -> Path:
-        path = Path(path)
-        return path.parent / (path.stem + "_label" + ext)
-
-    @staticmethod
-    def img_path_from_label_path(label_path: str | Path) -> Path:
-        label_path = Path(label_path)
-        return label_path.parent / (label_path.stem.rsplit("_label", 1)[0] + ".mat")
+    def img_path_from_label_path(p: str | Path) -> Path:
+        p = Path(p)
+        return p.parent / (p.stem.replace("_label", "") + ".mat")
 
     def shift_x(self, dx: int | Iterable[int] | Callable[[int], int]):
         if self.imgs is None:
@@ -228,7 +217,7 @@ class OctData:
 
         from tqdm import tqdm
 
-        new_labels = [None] * len(self.labels)
+        new_labels: AREA_LABELS = [None] * len(self.labels)
 
         def _tqdm(it):
             return tqdm(it, total=len(self.labels), desc="shift_x")
@@ -266,5 +255,4 @@ class OctData:
                 total_width[ll[1]] += abs(round(ll[0][1] - ll[0][0]))
                 count[ll[1]] += 1
 
-        c = Counter(ll[1] for l in self.labels if l for ll in l)
         return Counter(count), Counter(total_width)

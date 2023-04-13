@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt
 
 
 @contextmanager
-def wait_cursor(self: QtWidgets.QWidget | None = None):
+def WaitCursor(self: QtWidgets.QWidget | None = None):
     QtWidgets.QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
     if self is not None:
         self.repaint()

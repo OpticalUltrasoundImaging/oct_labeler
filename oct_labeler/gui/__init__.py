@@ -9,10 +9,10 @@ import scipy.io as sio
 import numpy as np
 
 from .checkable_list import CheckableList
-from ..oct_data import OctData, OctDataHdf5
+from ..data import OctData, OctDataHdf5, AREA_LABELS
 from .. import __version__
 from .single_select_dialog import SingleSelectDialog
-from .wait_cursor import wait_cursor
+from .wait_cursor import WaitCursor
 
 from .qt_utils import wrap_boxlayout, wrap_groupbox
 
@@ -203,10 +203,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         self.status_msg("Ready")
 
-    def hdf5_check(self):
-        # TODO: remove after deprecating .mat
-        return isinstance(self.oct_data, OctDataHdf5)
-
     def _area_changed(self, idx: int):
         """
         Handle when the area_select QComboBox is changed (by the user or programmatically).
@@ -267,14 +263,14 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def _export_image(self):
         frame_idx = int(self.imv.currentIndex)
 
-        if self.hdf5_check():  # HDF5 version
+        if isinstance(self.oct_data, OctDataHdf5):  # HDF5 version
             area_idx = self.curr_area
-            img = self.oct_data.imgs[area_idx][frame_idx]
-            pid = self.oct_data.hdf5path.parent.stem
+            img = self.oct_data.imgs[area_idx][frame_idx]  # type: ignore
+            pid = self.oct_data.hdf5path.parent.stem  # type: ignore
         else:  # Old mat format
             area_idx = 0
-            img = self.oct_data.imgs[frame_idx]
-            pid = self.oct_data.path.parent.stem.replace(" ", "-")
+            img = self.oct_data.imgs[frame_idx]  # type: ignore
+            pid = self.oct_data.path.parent.stem.replace(" ", "-")  # type: ignore
 
         path = Path.home() / "Desktop"
         path /= f"export_p{pid}_a{area_idx}_f{frame_idx}{'_b' if self._is_bin_img else ''}.png"
@@ -288,7 +284,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     def _after_load_show(self):
         assert self.oct_data is not None
-        if self.hdf5_check():
+        if isinstance(self.oct_data, OctDataHdf5):
             self.status_msg(
                 f"Loaded {self.fname} area={self.curr_area + 1} {self.oct_data.imgs[self.curr_area].shape}"
             )
@@ -304,25 +300,24 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         fname = Path(fname)
         assert fname.exists()
 
-        with wait_cursor():
+        with WaitCursor():
             hdf5_data = OctDataHdf5(fname)
 
         return hdf5_data
 
-    def _load_oct_data_mat(self, fname: str | Path) -> OctData | None:
-        fname = Path(fname)
-        assert fname.exists()
+    def _load_oct_data_mat(self, mat_path: str | Path) -> OctData | None:
+        mat_path = Path(mat_path)
+        assert mat_path.exists()
 
-        with wait_cursor():
-            mat = sio.loadmat(fname)
+        with WaitCursor():
+            mat = sio.loadmat(mat_path)
 
         keys = [s for s in mat.keys() if not s.startswith("__")]
 
-        print(f"Available keys in data file: {keys}")
         key = "I_updated"
         if key not in keys:
             d = SingleSelectDialog(
-                msg=f'Key "{key}" not found in "{Path(fname).name}".',
+                msg=f'Key "{key}" not found in "{Path(mat_path).name}".',
                 options=keys,
                 gbtitle="Keys",
             )
@@ -333,7 +328,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 print(f"Using {key=}")
             else:
                 self.error_dialog(
-                    f'Key "{key}" not found in "{Path(fname).name}". Available keys are {keys}. Please load the cut/aligned Mat file.'
+                    f'Key "{key}" not found in "{Path(mat_path).name}". Available keys are {keys}. Please load the cut/aligned Mat file.'
                 )
                 return None
 
@@ -341,20 +336,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         scans = np.moveaxis(scans, -1, 0)
         assert len(scans) > 0
 
-        oct_data = OctData(
-            path=fname,
-            label_path=OctData.label_path_from_img_path(fname),
-            imgs=scans,
-            labels=[None] * len(scans),
-        )
-
-        # try to load labels if they exist
-        try:
-            oct_data.load_labels()
-        except FileNotFoundError:
-            pass
-
-        return oct_data
+        return OctData.from_mat_path(mat_path, _imgs=scans)
 
     def _save_labels(self):
         if self.oct_data:
@@ -365,8 +347,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     def _disp_image(self):
         assert self.oct_data is not None
-        if self.hdf5_check():
-            with wait_cursor():
+        if isinstance(self.oct_data, OctDataHdf5):
+            with WaitCursor():
                 self.imv.setImage(self.oct_data.imgs[self.curr_area])
         else:
             self.imv.setImage(self.oct_data.imgs)
@@ -382,7 +364,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if not self.oct_data:
             return
 
-        if self.hdf5_check():
+        if isinstance(self.oct_data, OctDataHdf5):
             x_max = self.oct_data.imgs[self.curr_area].shape[-1]
         else:
             x_max = self.oct_data.imgs.shape[-1]
@@ -405,7 +387,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                     return
                 label += ";" + _polyp_type
 
-        print(f"_add_label {rgn=} {label=}")
+        # print(f"_add_label {rgn=} {label=}")
         if _dirty:
             self.dirty = True
 
@@ -474,10 +456,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         ind = self.imv.currentIndex
 
-        if self.hdf5_check():
-            labels = self.oct_data.labels[self.curr_area]  # ref
+        if isinstance(self.oct_data, OctDataHdf5):
+            labels: AREA_LABELS = self.oct_data.labels[self.curr_area]  # ref
         else:
-            labels = self.oct_data.labels  # ref
+            labels: AREA_LABELS = self.oct_data.labels  # ref
 
         if ind > 0 and labels[ind - 1]:
             labels[ind] = deepcopy(labels[ind - 1])
@@ -510,7 +492,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self._remove_displayed_linear_regions()
 
         # add current labels from oct_data
-        if self.hdf5_check():
+        if isinstance(self.oct_data, OctDataHdf5):
             labels = self.oct_data.labels[self.curr_area][ind]
         else:
             labels = self.oct_data.labels[ind]
@@ -542,13 +524,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         # get labes for this ind
         assert self.oct_data is not None
-        if self.hdf5_check():
+        if isinstance(self.oct_data, OctDataHdf5):
             labels = self.oct_data.labels[self.curr_area][ind]
         else:
             labels = self.oct_data.labels[ind]
 
         if labels is None:
-            if self.hdf5_check():
+            if isinstance(self.oct_data, OctDataHdf5):
                 self.oct_data.labels[self.curr_area][ind] = []
                 labels = self.oct_data.labels[self.curr_area][ind]
             else:
@@ -557,8 +539,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         else:
             labels.clear()
 
+        assert labels is not None
         for lnr_rgn, label in self.imv_region2label.items():
             rgn = lnr_rgn.getRegion()
+            rgn = (round(rgn[0]), round(rgn[1]))  # type: ignore
             labels.append((rgn, label))
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
@@ -584,8 +568,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         return super().keyPressEvent(event)
 
     def _toggle_binimg(self, b=True):
-        if self.hdf5_check():
-            with wait_cursor():
+        if isinstance(self.oct_data, OctDataHdf5):
+            with WaitCursor():
                 self._is_bin_img = b
                 self.oct_data.imgs = (
                     self.oct_data._binimgs if b else self.oct_data._imgs

@@ -1,8 +1,13 @@
-from typing import Sequence
+from typing import Iterable
 from PySide6 import QtWidgets
+from PySide6.QtWidgets import QWidget, QBoxLayout
 
 
-def wrap_boxlayout(*widgets: QtWidgets.QWidget | list | tuple, boxdir="v"):
+_WidgetOrLayout = QWidget | QBoxLayout
+_WidgetsOrLayouts = _WidgetOrLayout | Iterable[_WidgetOrLayout]
+
+
+def wrap_boxlayout(*widgets: _WidgetsOrLayouts, boxdir="v"):
     if boxdir == "v":
         layout = QtWidgets.QVBoxLayout()
         boxdir = "h"
@@ -22,9 +27,7 @@ def wrap_boxlayout(*widgets: QtWidgets.QWidget | list | tuple, boxdir="v"):
     return layout
 
 
-def wrap_groupbox(
-    name: str, *widgets: QtWidgets.QWidget | Sequence[QtWidgets.QWidget], boxdir="v"
-):
+def wrap_groupbox(name: str, *widgets: _WidgetsOrLayouts, boxdir="v"):
     """
     Wrap widgets in a QGroupBox
 

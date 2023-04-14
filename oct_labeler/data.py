@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Iterable, Sequence, TypeVar
+from typing import Callable, Iterable, Sequence, TypeVar, Final
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -7,6 +7,7 @@ import pickle
 
 import h5py
 import numpy as np
+import cv2
 
 
 RANGE_T = tuple[int, int]  # (1, 1)
@@ -78,7 +79,7 @@ class OctDataHdf5:
                 lbls = pickle.load(fp)
                 return lbls
 
-        print(f"{self.__class__.__name__}: Label file not found: {p}")
+        print(f"Warning: {self.__class__.__name__}: Label file not found: {p}")
         return [None] * self.n_areas
 
     def save_labels(self):
@@ -89,6 +90,7 @@ class OctDataHdf5:
 
 
 def _merge_neighbours(ls: FRAME_LABEL):
+    ls = sorted(ls)
     prev: ONE_LABEL | None = None
     prev = ls[0]
     for curr in ls[1:]:
@@ -104,13 +106,12 @@ def _merge_neighbours(ls: FRAME_LABEL):
         # If prev and curr have different labels,
         # or if prev and curr don't overlap, return the prev label,
         # and set curr to prev.
-        if prev_name != curr_name or prev_r[1] <= curr_r[0]:
+        if prev_name != curr_name or curr_r[0] - prev_r[1] > 1:
             yield prev
             prev = curr
             continue
 
         # Merge prev and curr
-        breakpoint()
         merged_r = (prev_r[0], curr_r[1])
         prev = (merged_r, prev[1])
         continue
@@ -255,3 +256,126 @@ class OctData:
                 count[ll[1]] += 1
 
         return Counter(count), Counter(total_width)
+
+
+def calc_offset_x(a: np.ndarray, b: np.ndarray, yslice=None):
+    if yslice is not None:
+        a, b = a[yslice].astype(np.double), b[yslice].astype(np.double)
+    elif yslice is None and a.shape[0] > 400:
+        yslice = slice(50, 300)  # default for OCT tube images
+        a, b = a[yslice].astype(np.double), b[yslice].astype(np.double)
+    else:
+        a, b = a.astype(np.double), b.astype(np.double)
+    return round(cv2.phaseCorrelate(a, b)[0][0])
+
+
+def _s(x: int, dx: int, xlim: int):
+    return (round(x) + dx + xlim) % xlim
+
+
+def mv_one(l: ONE_LABEL, dx: int, xlim: int) -> tuple[ONE_LABEL, ...]:
+    (x1, x2), name = l
+    x1, x2 = _s(x1, dx, xlim), _s(x2, dx, xlim)
+    if x1 < x2:
+        return (((x1, x2), name),)
+    elif x1 > x2:
+        if x2 == 0:
+            return (((x1, xlim), name),)
+        return (((x1, xlim), name), ((0, x2), name))
+    raise ValueError("x1 == x2")
+
+
+def shift_x(
+    old_imgs: np.ndarray | list[np.ndarray],
+    new_imgs: np.ndarray | list[np.ndarray],
+    old_labels: AREA_LABELS,
+):
+    """
+    Shift x for one scan area.
+    """
+    # (n_imgs, y, x)
+    assert old_imgs[0].shape == new_imgs[0].shape
+    assert len(old_imgs) == len(new_imgs)
+    xlim = old_imgs[0].shape[-1]
+
+    flatten = lambda l: sorted(x for ll in l for x in ll)
+
+    from tqdm import tqdm
+
+    new_labels: AREA_LABELS = [None] * len(old_labels)
+
+    for i, ls in tqdm(enumerate(old_labels), total=len(old_labels), desc="shift_x"):
+        # per frame
+        if ls is not None:
+            img1, img2 = old_imgs[i].astype(np.double), new_imgs[i].astype(np.double)
+            dx = calc_offset_x(img1, img2)
+            new_labels[i] = flatten(mv_one(l, dx, xlim) for l in ls)
+
+    # merge two labels if they overlap
+    for i, ls in enumerate(new_labels):
+        if ls:
+            new_labels[i] = list(_merge_neighbours(ls))
+
+    return new_labels
+
+
+if __name__ == "__main__":
+    import unittest
+
+    class Test_label_shift(unittest.TestCase):
+        def test_mv_one(self):
+            # Shift left over
+            self.assertEqual(
+                mv_one(((0, 10), "a"), dx=-10, xlim=2000), (((1990, 2000), "a"),)
+            )
+
+            # Shift left split
+            self.assertEqual(
+                mv_one(((0, 20), "a"), dx=-10, xlim=2000),
+                (((1990, 2000), "a"), ((0, 10), "a")),
+            )
+
+            # Shift right
+            self.assertEqual(
+                mv_one(((0, 10), "a"), dx=10, xlim=2000), (((10, 20), "a"),)
+            )
+
+            # Shift right over
+            self.assertEqual(
+                mv_one(((1990, 2000), "a"), dx=10, xlim=2000), (((0, 10), "a"),)
+            )
+
+            # Shift right split
+            self.assertEqual(
+                mv_one(((1980, 2000), "a"), dx=10, xlim=2000),
+                (((1990, 2000), "a"), ((0, 10), "a")),
+            )
+
+        def test_merge_neighbours(self):
+            # No merge. only sort
+            inp = [((1990, 2000), "a"), ((0, 10), "a")]
+            exp = [((0, 10), "a"), ((1990, 2000), "a")]
+            self.assertEqual(list(_merge_neighbours(inp)), exp)
+
+            # merge
+            inp = [((0, 10), "a"), ((11, 20), "a")]
+            exp = [((0, 20), "a")]
+            self.assertEqual(list(_merge_neighbours(inp)), exp)
+
+        def test_shift_x(self):
+            # (y=10, x=20) image
+            img1: Final = np.repeat(np.expand_dims(np.arange(20), 0), 10, axis=0)
+
+            offset = 5
+            img2 = np.roll(img1, offset)
+            old_label: FRAME_LABEL = [((2, 5), "a")]
+            new_label: FRAME_LABEL = [((2 + offset, 5 + offset), "a")]
+            self.assertEqual(shift_x([img1], [img2], [old_label]), [new_label])
+
+            offset = 3
+            img2 = np.roll(img1, offset)
+            old_label: FRAME_LABEL = [((15, 20), "a")]
+            new_label: FRAME_LABEL = [((0, 3), "a"), ((18, 20), "a")]
+            self.assertEqual(shift_x([img1], [img2], [old_label]), [new_label])
+
+    unittest.main()

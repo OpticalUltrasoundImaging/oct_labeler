@@ -248,13 +248,14 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 self.area_select.addItems([str(i + 1) for i in range(n_areas)])
                 # This calls self._after_load_show due to the callback
                 self.area_select.setDisabled(False)
-            else: # .mat
+            else:  # .mat
                 self.oct_data = self._load_oct_data_mat(self.fname)
                 self._after_load_show()
                 self.area_select.setDisabled(True)
 
         except Exception as e:
             import traceback
+
             print(e)
             traceback.print_stack()
             self.error_dialog("Unknown exception while reading file. Check logs.")
@@ -266,7 +267,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 )
             else:
                 self.status_msg(f"Loaded {self.fname} {self.oct_data.imgs.shape}")
-
 
         self.text_msg.setText("Opened " + self.fname)
 

@@ -248,14 +248,25 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 self.area_select.addItems([str(i + 1) for i in range(n_areas)])
                 # This calls self._after_load_show due to the callback
                 self.area_select.setDisabled(False)
-            else:
+            else: # .mat
                 self.oct_data = self._load_oct_data_mat(self.fname)
                 self._after_load_show()
+                self.area_select.setDisabled(True)
 
         except Exception as e:
+            import traceback
             print(e)
+            traceback.print_stack()
             self.error_dialog("Unknown exception while reading file. Check logs.")
             self.status_msg(f"Failed to load {self.fname}")
+        else:
+            if isinstance(self.oct_data, OctDataHdf5):
+                self.status_msg(
+                    f"Loaded {self.fname} area={self.curr_area + 1} {self.oct_data.imgs[self.curr_area].shape}"
+                )
+            else:
+                self.status_msg(f"Loaded {self.fname} {self.oct_data.imgs.shape}")
+
 
         self.text_msg.setText("Opened " + self.fname)
 
@@ -284,12 +295,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     def _after_load_show(self):
         assert self.oct_data is not None
-        if isinstance(self.oct_data, OctDataHdf5):
-            self.status_msg(
-                f"Loaded {self.fname} area={self.curr_area + 1} {self.oct_data.imgs[self.curr_area].shape}"
-            )
-        else:
-            self.status_msg(f"Loaded {self.fname} {self.oct_data.imgs.shape}")
 
         # show images
         self._disp_image()

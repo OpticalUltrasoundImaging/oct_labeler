@@ -148,6 +148,8 @@ class OctData:
         if p.exists():
             with open(self.label_path, "rb") as fp:
                 self.labels = pickle.load(fp)
+        else:
+            self.labels = [None] * len(self.imgs)
 
     @classmethod
     def from_label_path(cls, label_path: str | Path):
@@ -167,9 +169,9 @@ class OctData:
             path=Path(p),
             labels=[],  # load below with .load_labels()
         )
-        oct_data.load_labels()
         if _imgs is not None:
             oct_data._imgs = _imgs
+        oct_data.load_labels()
         return oct_data
 
     @staticmethod

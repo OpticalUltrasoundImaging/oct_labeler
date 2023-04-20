@@ -284,7 +284,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             pid = self.oct_data.path.parent.stem.replace(" ", "-")  # type: ignore
 
         path = Path.home() / "Desktop"
-        path /= f"export_p{pid}_a{area_idx}_f{frame_idx}{'_b' if self._is_bin_img else ''}.png"
+        path /= f"export_p{pid}_a{area_idx + 1}_f{frame_idx}{'_b' if self._is_bin_img else ''}.png"
         if self._is_bin_img:
             pil_img = Image.fromarray(img, "RGB")
             pil_img.save(path)

@@ -1,9 +1,10 @@
 from __future__ import annotations
-from typing import Callable, Iterable, Sequence, TypeVar, Final
+from typing import Callable, Iterable, Sequence, Mapping, TypeVar, Final
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 import pickle
+import logging
 
 import h5py
 import numpy as np
@@ -17,6 +18,7 @@ AREA_LABELS = list[FRAME_LABEL | None]
 AREAS_LABELS = list[AREA_LABELS | None]
 
 
+KT = TypeVar("KT")
 VT = TypeVar("VT")
 
 
@@ -38,20 +40,39 @@ class LazyList(Sequence[VT]):
         self.list[i] = v
 
 
+class LazyDict(Mapping[KT, VT]):
+    def __init__(self, get_func: Callable[[KT], VT], d: dict[KT, VT] = {}):
+        self._d = d
+        self._get_func = get_func
+
+    def __len__(self):
+        return len(self._d)
+
+    def __getitem__(self, k: KT) -> VT:
+        v = self._d.get(k)
+        if v is None:
+            v = self._d[k] = self._get_func(k)
+        return v
+
+    def __setitem__(self, k: KT, v: VT):
+        self._d[k] = v
+
+
 class OctDataHdf5:
-    def __init__(self, hdf5path: str | Path):
+    def __init__(self, hdf5path: str | Path, default_key="I_imgs"):
         self.hdf5path = Path(hdf5path)
         self._hdf5file = h5py.File(hdf5path, "r")
 
         self.n_areas = len(self._hdf5file["areas"])  # type: ignore
+        self._areas = list(self._hdf5file["areas"].keys())  # type: ignore
 
-        def _get_area(name: str, i: int) -> np.ndarray:
-            # Slicing a h5py dataset produces an np.ndarray
-            return self._hdf5file["areas"][str(i + 1)][name][...]  # type: ignore
-
-        self._imgs = LazyList(self.n_areas, partial(_get_area, "imgs"))
-        self._binimgs = LazyList(self.n_areas, partial(_get_area, "binimgs"))
-        self.imgs: LazyList = self._imgs
+        # get keys
+        assert "1" in self._hdf5file["areas"]  # type: ignore
+        self._keys = list(self._hdf5file["areas"]["1"].keys())  # type: ignore
+        for i in range(self.n_areas):
+            idx = str(i + 1)
+            for k in self._keys:
+                assert k in self._hdf5file["areas"][idx]  # type: ignore
 
         # labels[area_idx][img_idx]
         self._labels: AREAS_LABELS = self._load_labels()
@@ -62,6 +83,27 @@ class OctDataHdf5:
         self.labels: LazyList[AREA_LABELS] = LazyList(
             self.n_areas, _init_labels, self._labels
         )
+
+        self.key = default_key  # default key
+        if self.key not in self._keys:
+            self.key = self._keys[0]
+            logging.info(
+                f"Default key {default_key} not in HDF5 file {hdf5path}. Using {self.key}."
+            )
+
+        self.imgs = LazyList(self.n_areas, partial(self._get_area, self.key))
+
+    def _get_area(self, name: str, i: int) -> np.ndarray:
+        # Slicing a h5py dataset produces an np.ndarray
+        return self._hdf5file["areas"][str(i + 1)][name][...]  # type: ignore
+
+    def set_key(self, k: str):
+        "Set the key in 'areas/idx/I_img' currently used for self.imgs"
+        self.key = k
+        self.imgs = LazyList(self.n_areas, partial(self._get_area, k))
+
+    def get_keys(self):
+        return self._keys
 
     @classmethod
     def from_label_path(cls, p: Path):
@@ -79,7 +121,7 @@ class OctDataHdf5:
                 lbls = pickle.load(fp)
                 return lbls
 
-        print(f"Warning: {self.__class__.__name__}: Label file not found: {p}")
+        logging.info(f"{self.__class__.__name__}: Label file not found: {p}")
         return [None] * self.n_areas
 
     def save_labels(self):

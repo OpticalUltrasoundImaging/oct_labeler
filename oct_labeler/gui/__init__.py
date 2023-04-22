@@ -75,6 +75,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.text_msg = QtWidgets.QLabel("Welcome to OCT Image Labeler")
 
         ### Second horizontal layout
+        # Area select combobox
         area_label = QtWidgets.QLabel()
         area_label.setText("Current area:")
         area_label.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -82,11 +83,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.area_select.setDisabled(True)
         self.area_select.currentIndexChanged.connect(self._area_changed)
 
-        toggle_binimg_btn = QtWidgets.QPushButton("&Toggle bin image", self)
-        self._is_bin_img = False
-        toggle_binimg_btn.clicked.connect(
-            lambda: self._toggle_binimg(not self._is_bin_img)
-        )
+        # data select combobox (I_imgs, mu_imgs, etc.)
+        dataselect_label = QtWidgets.QLabel()
+        dataselect_label.setText("Current data:")
+        dataselect_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.data_select = QtWidgets.QComboBox()
+        self.data_select.setDisabled(True)
+        self.data_select.currentTextChanged.connect(self._data_select_changed)
 
         time_dec_btn = QtWidgets.QPushButton("&Back", self)
         time_dec_btn.clicked.connect(lambda: self.oct_data and self.imv.jumpFrames(-1))
@@ -103,7 +106,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             nav_gb = wrap_groupbox(
                 "Navigation",
                 [area_label, self.area_select],
-                toggle_binimg_btn,
+                [dataselect_label, self.data_select],
                 time_dec_btn,
                 time_inc_btn,
                 export_img_btn,
@@ -113,7 +116,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             nav_gb = wrap_groupbox(
                 "Navigation",
                 [area_label, self.area_select],
-                toggle_binimg_btn,
+                [dataselect_label, self.data_select],
                 time_dec_btn,
                 time_inc_btn,
                 export_img_btn,
@@ -216,6 +219,14 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.curr_area = idx
         self._after_load_show()
 
+    def _data_select_changed(self, txt: str):
+        if not txt:
+            return
+
+        if isinstance(self.oct_data, OctDataHdf5):
+            self.status_msg(f"Loading data {txt}")
+            self.oct_data.set_key(txt)
+
     def status_msg(self, msg: str):
         """
         Display a msg in the bottom status bar of the main window
@@ -242,16 +253,24 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.repaint()  # force render the status message
         try:
             if Path(self.fname).suffix == ".hdf5":
+                # Setup all states for HDF5 data
+
                 self.oct_data = self._load_oct_data_hdf5(self.fname)
-                n_areas = len(self.oct_data.imgs)
+                n_areas = self.oct_data.n_areas
+
                 self.area_select.clear()
                 self.area_select.addItems([str(i + 1) for i in range(n_areas)])
-                # This calls self._after_load_show due to the callback
                 self.area_select.setDisabled(False)
+
+                self.data_select.clear()
+                self.data_select.addItems(self.oct_data.get_keys())
+                self.data_select.setDisabled(False)
+
             else:  # .mat
                 self.oct_data = self._load_oct_data_mat(self.fname)
                 self._after_load_show()
                 self.area_select.setDisabled(True)
+                self.data_select.setDisabled(True)
 
         except Exception as e:
             import traceback
@@ -265,7 +284,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 self.status_msg(
                     f"Loaded {self.fname} area={self.curr_area + 1} {self.oct_data.imgs[self.curr_area].shape}"
                 )
-            else:
+            elif isinstance(self.oct_data, OctData):
                 self.status_msg(f"Loaded {self.fname} {self.oct_data.imgs.shape}")
 
         self.text_msg.setText("Opened " + self.fname)
@@ -284,13 +303,19 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             pid = self.oct_data.path.parent.stem.replace(" ", "-")  # type: ignore
 
         path = Path.home() / "Desktop"
-        path /= f"export_p{pid}_a{area_idx + 1}_f{frame_idx}{'_b' if self._is_bin_img else ''}.png"
-        if self._is_bin_img:
-            pil_img = Image.fromarray(img, "RGB")
-            pil_img.save(path)
+        if isinstance(self.oct_data, OctDataHdf5):  # HDF5 version
+            path /= (
+                f"export_p{pid}_a{area_idx + 1}_f{frame_idx}_{self.oct_data.key}.png"
+            )
         else:
+            path /= f"export_p{pid}_a{area_idx + 1}_f{frame_idx}.png"
+
+        if len(img.shape) == 2:
             pil_img = Image.fromarray(img, "L")
-            pil_img.save(path)
+        else:
+            pil_img = Image.fromarray(img, "RGB")
+
+        pil_img.save(path)
         self.status_msg(f"Exported image to {path}")
 
     def _after_load_show(self):
@@ -571,19 +596,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             # self.repaint()
 
         return super().keyPressEvent(event)
-
-    def _toggle_binimg(self, b=True):
-        if isinstance(self.oct_data, OctDataHdf5):
-            with WaitCursor():
-                self._is_bin_img = b
-                self.oct_data.imgs = (
-                    self.oct_data._binimgs if b else self.oct_data._imgs
-                )
-                # self._disp_image()
-                idx = self.imv.currentIndex
-                self.imv.setImage(self.oct_data.imgs[self.curr_area])
-                self.imv.setCurrentIndex(idx)
-                # self._imv_time_changed(idx, None)
 
     def _handle_dirty_close(self) -> bool:
         """

@@ -361,63 +361,102 @@ def shift_x(
     return new_labels
 
 
+import unittest
+
+
+class Test_label_shift(unittest.TestCase):
+    def test_mv_one(self):
+        # Shift left over
+        self.assertEqual(
+            mv_one(((0, 10), "a"), dx=-10, xlim=2000), (((1990, 2000), "a"),)
+        )
+
+        # Shift left split
+        self.assertEqual(
+            mv_one(((0, 20), "a"), dx=-10, xlim=2000),
+            (((1990, 2000), "a"), ((0, 10), "a")),
+        )
+
+        # Shift right
+        self.assertEqual(mv_one(((0, 10), "a"), dx=10, xlim=2000), (((10, 20), "a"),))
+
+        # Shift right over
+        self.assertEqual(
+            mv_one(((1990, 2000), "a"), dx=10, xlim=2000), (((0, 10), "a"),)
+        )
+
+        # Shift right split
+        self.assertEqual(
+            mv_one(((1980, 2000), "a"), dx=10, xlim=2000),
+            (((1990, 2000), "a"), ((0, 10), "a")),
+        )
+
+    def test_merge_neighbours(self):
+        # No merge. only sort
+        inp = [((1990, 2000), "a"), ((0, 10), "a")]
+        exp = [((0, 10), "a"), ((1990, 2000), "a")]
+        self.assertEqual(list(_merge_neighbours(inp)), exp)
+
+        # merge
+        inp = [((0, 10), "a"), ((11, 20), "a")]
+        exp = [((0, 20), "a")]
+        self.assertEqual(list(_merge_neighbours(inp)), exp)
+
+    def test_shift_x(self):
+        # (y=10, x=20) image
+        img1: Final = np.repeat(np.expand_dims(np.arange(20), 0), 10, axis=0)
+
+        offset = 5
+        img2 = np.roll(img1, offset)
+        old_label: FRAME_LABEL = [((2, 5), "a")]
+        new_label: FRAME_LABEL = [((2 + offset, 5 + offset), "a")]
+        self.assertEqual(shift_x([img1], [img2], [old_label]), [new_label])
+
+        offset = 3
+        img2 = np.roll(img1, offset)
+        old_label: FRAME_LABEL = [((15, 20), "a")]
+        new_label: FRAME_LABEL = [((0, 3), "a"), ((18, 20), "a")]
+        self.assertEqual(shift_x([img1], [img2], [old_label]), [new_label])
+
+
+import tempfile
+
+
+class TestHdf5Data(unittest.TestCase):
+    def setUp(self):
+        self.fp = tempfile.NamedTemporaryFile()
+
+        self.data = [
+            {
+                "imgs": np.random.random((20, 30)),
+                "bin_imgs": np.random.random((10, 20)),
+            },
+            {
+                "imgs": np.random.random((20, 30)),
+                "bin_imgs": np.random.random((10, 20)),
+            },
+            {
+                "imgs": np.random.random((20, 30)),
+                "bin_imgs": np.random.random((10, 20)),
+            },
+        ]
+
+        with h5py.File(self.fp.name, "w") as hdf5file:
+            for i, ds in enumerate(self.data):
+                group = hdf5file.create_group(f"areas/{i+1}")
+                for k, v in ds.items():
+                    group.create_dataset(k, data=v)
+
+    def test_hdf5_data(self):
+        d = OctDataHdf5(self.fp.name)
+        self.assertEqual(d.n_areas, len(self.data))
+        self.assertEqual(d._keys, ["bin_imgs", "imgs"])
+
+        for i, ds in enumerate(self.data):
+            for k, v in ds.items():
+                d.set_key(k)
+                self.assertTrue(np.allclose(v, d.imgs[i]))
+
+
 if __name__ == "__main__":
-    import unittest
-
-    class Test_label_shift(unittest.TestCase):
-        def test_mv_one(self):
-            # Shift left over
-            self.assertEqual(
-                mv_one(((0, 10), "a"), dx=-10, xlim=2000), (((1990, 2000), "a"),)
-            )
-
-            # Shift left split
-            self.assertEqual(
-                mv_one(((0, 20), "a"), dx=-10, xlim=2000),
-                (((1990, 2000), "a"), ((0, 10), "a")),
-            )
-
-            # Shift right
-            self.assertEqual(
-                mv_one(((0, 10), "a"), dx=10, xlim=2000), (((10, 20), "a"),)
-            )
-
-            # Shift right over
-            self.assertEqual(
-                mv_one(((1990, 2000), "a"), dx=10, xlim=2000), (((0, 10), "a"),)
-            )
-
-            # Shift right split
-            self.assertEqual(
-                mv_one(((1980, 2000), "a"), dx=10, xlim=2000),
-                (((1990, 2000), "a"), ((0, 10), "a")),
-            )
-
-        def test_merge_neighbours(self):
-            # No merge. only sort
-            inp = [((1990, 2000), "a"), ((0, 10), "a")]
-            exp = [((0, 10), "a"), ((1990, 2000), "a")]
-            self.assertEqual(list(_merge_neighbours(inp)), exp)
-
-            # merge
-            inp = [((0, 10), "a"), ((11, 20), "a")]
-            exp = [((0, 20), "a")]
-            self.assertEqual(list(_merge_neighbours(inp)), exp)
-
-        def test_shift_x(self):
-            # (y=10, x=20) image
-            img1: Final = np.repeat(np.expand_dims(np.arange(20), 0), 10, axis=0)
-
-            offset = 5
-            img2 = np.roll(img1, offset)
-            old_label: FRAME_LABEL = [((2, 5), "a")]
-            new_label: FRAME_LABEL = [((2 + offset, 5 + offset), "a")]
-            self.assertEqual(shift_x([img1], [img2], [old_label]), [new_label])
-
-            offset = 3
-            img2 = np.roll(img1, offset)
-            old_label: FRAME_LABEL = [((15, 20), "a")]
-            new_label: FRAME_LABEL = [((0, 3), "a"), ((18, 20), "a")]
-            self.assertEqual(shift_x([img1], [img2], [old_label]), [new_label])
-
     unittest.main()

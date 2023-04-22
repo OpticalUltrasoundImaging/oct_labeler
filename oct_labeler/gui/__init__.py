@@ -231,6 +231,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if isinstance(self.oct_data, OctDataHdf5):
             self.status_msg(f"Loading data {txt}")
             self.oct_data.set_key(txt)
+            self._after_load_show()
 
     def status_msg(self, msg: str):
         """

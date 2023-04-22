@@ -1,5 +1,6 @@
 from pathlib import Path
 from copy import deepcopy
+import logging
 
 from PIL import Image
 from PySide6 import QtCore, QtWidgets, QtGui
@@ -16,6 +17,10 @@ from .wait_cursor import WaitCursor
 
 from .qt_utils import wrap_boxlayout, wrap_groupbox
 
+
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s %(message)s", datefmt="%Y/%m/%d %H:%M:%S"
+)
 
 APP_NAME = f"OCT Image Labeler ({__version__})"
 
@@ -231,7 +236,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         """
         Display a msg in the bottom status bar of the main window
         """
-        print("status_msg:", msg)
+        logging.info("status_msg: " + msg)
         self.statusBar().showMessage(msg)
 
     @QtCore.Slot()

@@ -12,6 +12,7 @@ import numpy as np
 from .checkable_list import CheckableList
 from ..data import OctData, OctDataHdf5, AREA_LABELS
 from .. import __version__
+from .display_settings_widget import DisplaySettingsWidget
 from .single_select_dialog import SingleSelectDialog
 from .wait_cursor import WaitCursor
 
@@ -64,44 +65,6 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
         super().mousePressEvent(e)
 
 
-class DisplaySettingsWidget(QtWidgets.QGroupBox):
-    sigToggleLogCompression = QtCore.Signal(bool)
-    sigDynamicRangeChanged = QtCore.Signal(int)
-
-    def __init__(self, parent=None):
-        super().__init__("Display", parent)
-
-        log_compression_cb = QtWidgets.QCheckBox()
-        log_compression_cb.setText("Use log compression")
-        log_compression_cb.setDown(False)
-        log_compression_cb.stateChanged.connect(self._toggle_log_compression)
-
-        self._drange_label = dynamic_range_label = QtWidgets.QLabel()
-        dynamic_range_label.setText("Dynamic range")
-        dynamic_range_label.setEnabled(False)
-        self._drange_spinbox = dynamic_range_sb = QtWidgets.QSpinBox()
-        dynamic_range_sb.setValue(120)
-        dynamic_range_sb.setMaximum(200)
-        dynamic_range_sb.setMinimum(5)
-        dynamic_range_sb.setEnabled(False)
-        dynamic_range_sb.valueChanged.connect(self.sigDynamicRangeChanged)
-
-        _log_compression_gb = wrap_groupbox(
-            "Log compression",
-            log_compression_cb,
-            [dynamic_range_label, dynamic_range_sb],
-        )
-
-        self.setLayout(wrap_boxlayout(_log_compression_gb, boxdir="v"))
-
-    @QtCore.Slot()
-    def _toggle_log_compression(self, check_state: int):
-        checked = check_state != 0
-        self._drange_label.setEnabled(checked)
-        self._drange_spinbox.setEnabled(checked)
-        self.sigToggleLogCompression.emit(checked)
-
-
 class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def __init__(self):
         super().__init__()
@@ -116,6 +79,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.fname: str | Path = ""
 
         self.text_msg = QtWidgets.QLabel("Welcome to OCT Image Labeler")
+
+        self._imgs: np.ndarray | None = None
 
         ############################
         ### Second horizontal layout
@@ -143,9 +108,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.data_select.currentTextChanged.connect(self._data_select_changed)
 
         time_dec_btn = QtWidgets.QPushButton("&Back", self)
-        time_dec_btn.clicked.connect(lambda: self.oct_data and self.imv.jumpFrames(-1))
+        time_dec_btn.clicked.connect(lambda: self.imv.jumpFrames(-1))
         time_inc_btn = QtWidgets.QPushButton("&Forward", self)
-        time_inc_btn.clicked.connect(lambda: self.oct_data and self.imv.jumpFrames(1))
+        time_inc_btn.clicked.connect(lambda: self.imv.jumpFrames(1))
 
         export_img_btn = QtWidgets.QPushButton("&Export Image", self)
         export_img_btn.clicked.connect(self._export_image)
@@ -173,10 +138,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 export_img_btn,
             )
 
+        self.nav_gb.setEnabled(False)
+
         #####################
         ### Display GroupBox
         #####################
         self.disp_settings = DisplaySettingsWidget()
+        self.disp_settings.setEnabled(False)
 
         ###################
         ### Labels GroupBox
@@ -221,6 +189,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         self.label_list.setMaximumWidth(_max_width)
         self.polyp_type_list.setMaximumWidth(_max_width)
+        self.label_list.setEnabled(False)
+        self.polyp_type_list.setEnabled(False)
 
         self.labels_gb = wrap_groupbox(
             "Labels",
@@ -229,6 +199,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             duplicate_labels_btn,
             remove_label_btn,
         )
+        self.labels_gb.setEnabled(False)
 
         ###################
         ### image view area
@@ -284,6 +255,12 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         self.status_msg(f"Loading Area {idx + 1}")
         self.curr_area = idx
+
+        if isinstance(self.oct_data, OctDataHdf5):
+            self._imgs = self.oct_data.imgs[self.curr_area]
+        else:
+            self._imgs = self.oct_data.imgs
+
         self._after_load_show()
 
     def _data_select_changed(self, txt: str):
@@ -293,7 +270,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if isinstance(self.oct_data, OctDataHdf5):
             self.status_msg(f"Loading data {txt}")
             self.oct_data.set_key(txt)
-            self._after_load_show()
+            self._area_changed(self.curr_area)
 
     def status_msg(self, msg: str):
         """
@@ -325,6 +302,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
                 self.oct_data = self._load_oct_data_hdf5(self.fname)
                 n_areas = self.oct_data.n_areas
+                self._imgs = self.oct_data.imgs[self.curr_area]
 
                 self.area_select.clear()
                 self.area_select.addItems([str(i + 1) for i in range(n_areas)])
@@ -339,6 +317,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
             else:  # .mat
                 self.oct_data = self._load_oct_data_mat(self.fname)
+                self._imgs = self.oct_data.imgs
                 self._after_load_show()
 
                 self._area_label.setEnabled(False)
@@ -355,26 +334,27 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             self.error_dialog("Unknown exception while reading file. Check logs.")
             self.status_msg(f"Failed to load {self.fname}")
         else:
-            if isinstance(self.oct_data, OctDataHdf5):
-                self.status_msg(
-                    f"Loaded {self.fname} area={self.curr_area + 1} {self.oct_data.imgs[self.curr_area].shape}"
-                )
-            elif isinstance(self.oct_data, OctData):
-                self.status_msg(f"Loaded {self.fname} {self.oct_data.imgs.shape}")
+            self.status_msg(
+                f"Loaded {self.fname} area={self.curr_area + 1} {self._imgs[self.curr_area].shape}"
+            )
+        self.nav_gb.setEnabled(True)
+        self.disp_settings.setEnabled(True)
+        self.labels_gb.setEnabled(True)
+        self.label_list.setEnabled(True)
+        self.polyp_type_list.setEnabled(True)
 
         self.text_msg.setText("Opened " + self.fname)
 
     @QtCore.Slot()
     def _export_image(self):
         frame_idx = int(self.imv.currentIndex)
+        img = self._imgs[frame_idx]
 
         if isinstance(self.oct_data, OctDataHdf5):  # HDF5 version
             area_idx = self.curr_area
-            img = self.oct_data.imgs[area_idx][frame_idx]  # type: ignore
             pid = self.oct_data.hdf5path.parent.stem  # type: ignore
         else:  # Old mat format
             area_idx = 0
-            img = self.oct_data.imgs[frame_idx]  # type: ignore
             pid = self.oct_data.path.parent.stem.replace(" ", "-")  # type: ignore
 
         path = Path.home() / "Desktop"
@@ -394,8 +374,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.status_msg(f"Exported image to {path}")
 
     def _after_load_show(self):
-        assert self.oct_data is not None
-
         # show images
         self._disp_image()
         # create LinearRegionItem if labels
@@ -451,12 +429,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             self.status_msg(msg)
 
     def _disp_image(self):
-        assert self.oct_data is not None
-        if isinstance(self.oct_data, OctDataHdf5):
-            with WaitCursor():
-                self.imv.setImage(self.oct_data.imgs[self.curr_area])
-        else:
-            self.imv.setImage(self.oct_data.imgs)
+        self.imv.setImage(self._imgs)
 
     @QtCore.Slot()
     def _add_label(
@@ -469,10 +442,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if not self.oct_data:
             return
 
-        if isinstance(self.oct_data, OctDataHdf5):
-            x_max = self.oct_data.imgs[self.curr_area].shape[-1]
-        else:
-            x_max = self.oct_data.imgs.shape[-1]
+        x_max = self._imgs.shape[-1]
 
         if rgn is None:
             rgn = (0, x_max // 2)

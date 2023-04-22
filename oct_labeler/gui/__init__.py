@@ -64,6 +64,44 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
         super().mousePressEvent(e)
 
 
+class DisplaySettingsWidget(QtWidgets.QGroupBox):
+    sigToggleLogCompression = QtCore.Signal(bool)
+    sigDynamicRangeChanged = QtCore.Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__("Display", parent)
+
+        log_compression_cb = QtWidgets.QCheckBox()
+        log_compression_cb.setText("Use log compression")
+        log_compression_cb.setDown(False)
+        log_compression_cb.stateChanged.connect(self._toggle_log_compression)
+
+        self._drange_label = dynamic_range_label = QtWidgets.QLabel()
+        dynamic_range_label.setText("Dynamic range")
+        dynamic_range_label.setEnabled(False)
+        self._drange_spinbox = dynamic_range_sb = QtWidgets.QSpinBox()
+        dynamic_range_sb.setValue(120)
+        dynamic_range_sb.setMaximum(200)
+        dynamic_range_sb.setMinimum(5)
+        dynamic_range_sb.setEnabled(False)
+        dynamic_range_sb.valueChanged.connect(self.sigDynamicRangeChanged)
+
+        _log_compression_gb = wrap_groupbox(
+            "Log compression",
+            log_compression_cb,
+            [dynamic_range_label, dynamic_range_sb],
+        )
+
+        self.setLayout(wrap_boxlayout(_log_compression_gb, boxdir="v"))
+
+    @QtCore.Slot()
+    def _toggle_log_compression(self, check_state: int):
+        checked = check_state != 0
+        self._drange_label.setEnabled(checked)
+        self._drange_spinbox.setEnabled(checked)
+        self.sigToggleLogCompression.emit(checked)
+
+
 class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def __init__(self):
         super().__init__()
@@ -79,21 +117,29 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         self.text_msg = QtWidgets.QLabel("Welcome to OCT Image Labeler")
 
+        ############################
         ### Second horizontal layout
+        ############################
+
+        ########################
+        ### Navigation GroupBox
+        ########################
         # Area select combobox
-        area_label = QtWidgets.QLabel()
+        self._area_label = area_label = QtWidgets.QLabel()
+        area_label.setEnabled(False)
         area_label.setText("Current area:")
         area_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.area_select = QtWidgets.QComboBox()
-        self.area_select.setDisabled(True)
+        self.area_select.setEnabled(False)
         self.area_select.currentIndexChanged.connect(self._area_changed)
 
         # data select combobox (I_imgs, mu_imgs, etc.)
-        dataselect_label = QtWidgets.QLabel()
+        self._dataselect_label = dataselect_label = QtWidgets.QLabel()
+        dataselect_label.setEnabled(False)
         dataselect_label.setText("Current data:")
         dataselect_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.data_select = QtWidgets.QComboBox()
-        self.data_select.setDisabled(True)
+        self.data_select.setEnabled(False)
         self.data_select.currentTextChanged.connect(self._data_select_changed)
 
         time_dec_btn = QtWidgets.QPushButton("&Back", self)
@@ -108,7 +154,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             debug_btn = QtWidgets.QPushButton("Breakpoint")
             debug_btn.clicked.connect(self.breakpoint)
 
-            nav_gb = wrap_groupbox(
+            self.nav_gb = wrap_groupbox(
                 "Navigation",
                 [area_label, self.area_select],
                 [dataselect_label, self.data_select],
@@ -118,7 +164,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 debug_btn,
             )
         else:
-            nav_gb = wrap_groupbox(
+            self.nav_gb = wrap_groupbox(
                 "Navigation",
                 [area_label, self.area_select],
                 [dataselect_label, self.data_select],
@@ -127,6 +173,14 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 export_img_btn,
             )
 
+        #####################
+        ### Display GroupBox
+        #####################
+        self.disp_settings = DisplaySettingsWidget()
+
+        ###################
+        ### Labels GroupBox
+        ###################
         save_label_btn = QtWidgets.QPushButton("&Save labels", self)
         save_label_btn.clicked.connect(self._save_labels)
         duplicate_labels_btn = QtWidgets.QPushButton("&Copy last labels", self)
@@ -135,8 +189,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         add_label_btn = QtWidgets.QPushButton("&Add label", self)
         add_label_btn.clicked.connect(self._add_label)
 
-        label_list = CheckableList(LABELS)
-        self.label_list = label_list
+        self.label_list = CheckableList(LABELS)
 
         _polyp_types = [i if isinstance(i, str) else i[0] for i in POLYP_TYPES]
         polyp_type_list = CheckableList(_polyp_types)
@@ -157,19 +210,19 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             width = ql.sizeHintForColumn(0) + 10
             return width, height
 
-        w1, h1 = _calc_ListWidget_size(label_list)
+        w1, h1 = _calc_ListWidget_size(self.label_list)
         w2, h2 = _calc_ListWidget_size(polyp_type_list)
 
         _max_height = max(h1, h2)
         _max_width = max(w1, w2)
 
-        label_list.setMaximumHeight(_max_height)
-        polyp_type_list.setMaximumHeight(_max_height)
+        self.label_list.setMaximumHeight(_max_height)
+        self.polyp_type_list.setMaximumHeight(_max_height)
 
-        label_list.setMaximumWidth(_max_width)
-        polyp_type_list.setMaximumWidth(_max_width)
+        self.label_list.setMaximumWidth(_max_width)
+        self.polyp_type_list.setMaximumWidth(_max_width)
 
-        labels_gb = wrap_groupbox(
+        self.labels_gb = wrap_groupbox(
             "Labels",
             save_label_btn,
             add_label_btn,
@@ -177,7 +230,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             remove_label_btn,
         )
 
+        ###################
         ### image view area
+        ###################
         self.imv = pg.ImageView(name="ImageView")
         self.imv.sigTimeChanged.connect(self._imv_time_changed)
 
@@ -197,11 +252,18 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.oct_data: OctData | OctDataHdf5 | None = None
         self.curr_area = 1
 
-        ### Define layout
+        #################
+        ### Main layout
+        #################
         # top horizontal layout
         hlayout1 = wrap_boxlayout(file_dialog_btn, self.text_msg, boxdir="h")
         hlayout2 = wrap_boxlayout(
-            nav_gb, labels_gb, label_list, polyp_type_list, boxdir="h"
+            self.nav_gb,
+            self.disp_settings,
+            self.labels_gb,
+            self.label_list,
+            self.polyp_type_list,
+            boxdir="h",
         )
 
         # main layout
@@ -266,17 +328,24 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
                 self.area_select.clear()
                 self.area_select.addItems([str(i + 1) for i in range(n_areas)])
-                self.area_select.setDisabled(False)
+                self.area_select.setEnabled(True)
+                self._area_label.setEnabled(True)
 
                 self.data_select.clear()
                 self.data_select.addItems(self.oct_data.get_keys())
-                self.data_select.setDisabled(False)
+                self.data_select.setEnabled(True)
+
+                self._dataselect_label.setEnabled(True)
 
             else:  # .mat
                 self.oct_data = self._load_oct_data_mat(self.fname)
                 self._after_load_show()
-                self.area_select.setDisabled(True)
-                self.data_select.setDisabled(True)
+
+                self._area_label.setEnabled(False)
+                self.area_select.setEnabled(False)
+
+                self._dataselect_label.setEnabled(False)
+                self.data_select.setEnabled(False)
 
         except Exception as e:
             import traceback
@@ -675,6 +744,10 @@ def gui_main():
         p.setColor(QPalette.WindowText, QColor(255, 255, 255))
         p.setColor(QPalette.ButtonText, QColor(255, 255, 255))
         p.setColor(QPalette.Text, QColor(255, 255, 255))
+
+        p.setColor(QPalette.Disabled, QPalette.WindowText, QColor(255, 255, 255, 128))
+        p.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(255, 255, 255, 128))
+        p.setColor(QPalette.Disabled, QPalette.Text, QColor(255, 255, 255, 128))
 
         app.setPalette(p)
 

@@ -411,11 +411,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def _load_oct_data_hdf5(self, fname: str | Path):
         fname = Path(fname)
         assert fname.exists()
-
-        with WaitCursor():
-            hdf5_data = OctDataHdf5(fname)
-
-        return hdf5_data
+        return OctDataHdf5(fname)
 
     def _load_oct_data_mat(self, mat_path: str | Path) -> OctData | None:
         mat_path = Path(mat_path)

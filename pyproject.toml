@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oct_labeler"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
   "PySide6",
   "pyqtgraph",
   "numpy",
+  "numba",
   "scipy",
   "h5py",
   "click",

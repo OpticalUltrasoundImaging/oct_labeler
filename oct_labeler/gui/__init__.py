@@ -270,7 +270,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             ] = 1.0  # get rid of noise line at the top of the images
 
             dr = self.disp_settings.getDynamicRange()
-            self._imgs = log_compress(self._imgs_orig, dr)
+
+            with WaitCursor():
+                self._imgs = log_compress(self._imgs_orig, dr)
 
             logging.info(f"Applied dynamic range {dr} dB")
         else:
@@ -292,10 +294,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.status_msg(f"Loading Area {idx + 1}")
         self.curr_area = idx
 
-        if isinstance(self.oct_data, OctDataHdf5):
-            self._imgs_orig = self.oct_data.imgs[self.curr_area]
-        else:
-            self._imgs_orig = self.oct_data.imgs
+        with WaitCursor():
+            if isinstance(self.oct_data, OctDataHdf5):
+                self._imgs_orig = self.oct_data.imgs[self.curr_area]
+            else:
+                self._imgs_orig = self.oct_data.imgs
 
         self._toggle_dynamic_range(self.disp_settings.logCompressionEnabled())
         # self._after_load_show()

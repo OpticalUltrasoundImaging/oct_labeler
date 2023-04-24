@@ -71,8 +71,8 @@ import numba as nb
 @nb.njit(fastmath=True, parallel=True, cache=True, nogil=True)
 def log_compress(x, dB: float, maxval=255.0):
     "Log compression with dynamic range dB"
-    lc = 20.0 / dB * np.log10(x / x.max()) + 1.0
-    # lc[lc < 0] = 0
+    xmax = np.percentile(x, 99.5)
+    lc = 20.0 / dB * np.log10(x / xmax) + 1.0
     lc = np.clip(lc, 0.0, 1.0)
     return maxval * lc
 

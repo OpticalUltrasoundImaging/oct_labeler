@@ -1,8 +1,8 @@
 from pathlib import Path
 from copy import deepcopy
+from functools import partial
 import logging
 
-from PIL import Image
 from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6.QtCore import Qt
 import pyqtgraph as pg
@@ -65,6 +65,18 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
         super().mousePressEvent(e)
 
 
+import numba as nb
+
+
+@nb.njit(fastmath=True, parallel=True, cache=True, nogil=True)
+def log_compress(x, dB: float, maxval=255.0):
+    "Log compression with dynamic range dB"
+    lc = 20.0 / dB * np.log10(x / x.max()) + 1.0
+    # lc[lc < 0] = 0
+    lc = np.clip(lc, 0.0, 1.0)
+    return maxval * lc
+
+
 class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def __init__(self):
         super().__init__()
@@ -80,6 +92,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         self.text_msg = QtWidgets.QLabel("Welcome to OCT Image Labeler")
 
+        self._imgs_orig: np.ndarray | None = None
         self._imgs: np.ndarray | None = None
 
         ############################
@@ -145,6 +158,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         #####################
         self.disp_settings = DisplaySettingsWidget()
         self.disp_settings.setEnabled(False)
+        self.disp_settings.sigToggleLogCompression.connect(self._toggle_dynamic_range)
+        self.disp_settings.sigDynamicRangeChanged.connect(
+            partial(self._toggle_dynamic_range, True)
+        )
 
         ###################
         ### Labels GroupBox
@@ -244,7 +261,26 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         self.status_msg("Ready")
 
-    def _area_changed(self, idx: int):
+    @QtCore.Slot()
+    def _toggle_dynamic_range(self, on: bool):
+        if on:
+            assert self._imgs_orig is not None
+            self._imgs_orig[
+                :, :50
+            ] = 1.0  # get rid of noise line at the top of the images
+
+            dr = self.disp_settings.getDynamicRange()
+            self._imgs = log_compress(self._imgs_orig, dr)
+
+            logging.info(f"Applied dynamic range {dr} dB")
+        else:
+            self._imgs = self._imgs_orig
+
+        frame_idx = self.imv.currentIndex
+        self._after_load_show()
+        self.imv.setCurrentIndex(frame_idx)
+
+    def _area_changed(self, idx: int = 0):
         """
         Handle when the area_select QComboBox is changed (by the user or programmatically).
 
@@ -257,11 +293,12 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.curr_area = idx
 
         if isinstance(self.oct_data, OctDataHdf5):
-            self._imgs = self.oct_data.imgs[self.curr_area]
+            self._imgs_orig = self.oct_data.imgs[self.curr_area]
         else:
-            self._imgs = self.oct_data.imgs
+            self._imgs_orig = self.oct_data.imgs
 
-        self._after_load_show()
+        self._toggle_dynamic_range(self.disp_settings.logCompressionEnabled())
+        # self._after_load_show()
 
     def _data_select_changed(self, txt: str):
         if not txt:
@@ -302,7 +339,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
                 self.oct_data = self._load_oct_data_hdf5(self.fname)
                 n_areas = self.oct_data.n_areas
-                self._imgs = self.oct_data.imgs[self.curr_area]
 
                 self.area_select.clear()
                 self.area_select.addItems([str(i + 1) for i in range(n_areas)])
@@ -312,19 +348,20 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 self.data_select.clear()
                 self.data_select.addItems(self.oct_data.get_keys())
                 self.data_select.setEnabled(True)
-
                 self._dataselect_label.setEnabled(True)
+
+                self._area_changed(self.curr_area)  # disp data updated here
 
             else:  # .mat
                 self.oct_data = self._load_oct_data_mat(self.fname)
-                self._imgs = self.oct_data.imgs
-                self._after_load_show()
 
                 self._area_label.setEnabled(False)
                 self.area_select.setEnabled(False)
 
                 self._dataselect_label.setEnabled(False)
                 self.data_select.setEnabled(False)
+
+                self._area_changed(self.curr_area)  # disp data updated here
 
         except Exception as e:
             import traceback
@@ -347,35 +384,24 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     @QtCore.Slot()
     def _export_image(self):
-        frame_idx = int(self.imv.currentIndex)
-        img = self._imgs[frame_idx]
-
-        if isinstance(self.oct_data, OctDataHdf5):  # HDF5 version
-            area_idx = self.curr_area
-            pid = self.oct_data.hdf5path.parent.stem  # type: ignore
-        else:  # Old mat format
-            area_idx = 0
-            pid = self.oct_data.path.parent.stem.replace(" ", "-")  # type: ignore
-
+        # Compute filename
         path = Path.home() / "Desktop"
+        frame_idx = int(self.imv.currentIndex)
         if isinstance(self.oct_data, OctDataHdf5):  # HDF5 version
-            path /= (
-                f"export_p{pid}_a{area_idx + 1}_f{frame_idx}_{self.oct_data.key}.png"
-            )
-        else:
-            path /= f"export_p{pid}_a{area_idx + 1}_f{frame_idx}.png"
+            pid = self.oct_data.hdf5path.parent.stem  # type: ignore
+            path /= f"export_p{pid}_a{self.curr_area + 1}_f{frame_idx}_{self.oct_data.key}.png"
+        else:  # Old mat format
+            pid = self.oct_data.path.parent.stem.replace(" ", "-")  # type: ignore
+            path /= f"export_p{pid}_a1_f{frame_idx}.png"
 
-        if len(img.shape) == 2:
-            pil_img = Image.fromarray(img, "L")
-        else:
-            pil_img = Image.fromarray(img, "RGB")
-
-        pil_img.save(path)
+        # save image
+        self.imv.imageItem.save(str(path))
         self.status_msg(f"Exported image to {path}")
 
     def _after_load_show(self):
         # show images
-        self._disp_image()
+        self.imv.setImage(self._imgs)
+
         # create LinearRegionItem if labels
         self._imv_update_linear_regions_from_labels()
 
@@ -427,9 +453,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             self.dirty = False
             msg = f"Saved labels to {label_path}"
             self.status_msg(msg)
-
-    def _disp_image(self):
-        self.imv.setImage(self._imgs)
 
     @QtCore.Slot()
     def _add_label(
@@ -690,6 +713,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 def gui_main():
     import sys
     import os
+
+    # Fix display not set on linux
+    if os.name == "posix" and os.environ.get("DISPLAY") is None:
+        os.environ["DISPLAY"] = ":1"
 
     if os.name == "nt":
         # Dark mode for Windows

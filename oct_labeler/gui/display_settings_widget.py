@@ -7,7 +7,7 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
     sigToggleLogCompression = QtCore.Signal(bool)
     sigDynamicRangeChanged = QtCore.Signal()
 
-    def __init__(self, parent=None, default_dr=90):
+    def __init__(self, parent=None, default_dr=50):
         super().__init__("Display", parent)
 
         self._log_comp_cb = QtWidgets.QCheckBox()

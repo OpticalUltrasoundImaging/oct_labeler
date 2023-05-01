@@ -68,13 +68,24 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
 import numba as nb
 
 
-@nb.njit(fastmath=True, parallel=True, cache=True, nogil=True)
-def log_compress(x, dB: float, maxval=255.0):
+@nb.njit(
+    (nb.float64[:, :, ::1], nb.float64),
+    nogil=True,
+    fastmath=True,
+    parallel=True,
+    cache=True,
+)
+def log_compress_par(x, dB: float):
     "Log compression with dynamic range dB"
-    xmax = np.percentile(x, 99.5)
-    lc = 20.0 / dB * np.log10(x / xmax) + 1.0
-    lc = np.clip(lc, 0.0, 1.0)
-    return maxval * lc
+    maxval = 255.0
+    res = np.empty(x.shape, dtype=np.uint8)
+    l = len(x)
+    for i in nb.prange(l):
+        xmax = np.percentile(x[i], 99.9)
+        lc = 20.0 / dB * np.log10(x[i] / xmax) + 1.0
+        lc = np.clip(lc, 0.0, 1.0)
+        res[i] = (maxval * lc).astype(np.uint8)
+    return res
 
 
 class AppWin(QtWidgets.QMainWindow, WindowMixin):
@@ -272,7 +283,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             dr = self.disp_settings.getDynamicRange()
 
             with WaitCursor():
-                self._imgs = log_compress(self._imgs_orig, dr)
+                self._imgs = log_compress_par(self._imgs_orig, float(dr))
 
             logging.info(f"Applied dynamic range {dr} dB")
         else:

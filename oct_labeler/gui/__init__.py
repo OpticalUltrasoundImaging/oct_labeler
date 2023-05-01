@@ -22,6 +22,7 @@ from .qt_utils import wrap_boxlayout, wrap_groupbox
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s %(message)s", datefmt="%Y/%m/%d %H:%M:%S"
 )
+logging.getLogger("numba").setLevel(logging.INFO)
 
 APP_NAME = f"OCT Image Labeler ({__version__})"
 

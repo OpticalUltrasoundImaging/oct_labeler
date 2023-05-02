@@ -293,7 +293,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         with WaitCursor():
             if isinstance(self.oct_data, OctDataHdf5):
                 self._imgs_orig = self.oct_data.imgs[self.curr_area]
-            else:
+            elif isinstance(self.oct_data, OctData):
                 self._imgs_orig = self.oct_data.imgs
 
         # self._toggle_dynamic_range(self.disp_settings.logCompressionEnabled())
@@ -304,11 +304,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
     def _data_select_changed(self, txt: str):
         if not txt:
             return
+        assert self.oct_data
 
-        if isinstance(self.oct_data, OctDataHdf5):
-            self.status_msg(f"Loading data {txt}")
-            self.oct_data.set_key(txt)
-            self._area_changed(self.curr_area)
+        self.status_msg(f"Loading data {txt}")
+        self.oct_data.set_key(txt)
+        self._area_changed(self.curr_area)
 
     def status_msg(self, msg: str):
         """
@@ -359,8 +359,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 self._area_label.setEnabled(False)
                 self.area_select.setEnabled(False)
 
-                self._dataselect_label.setEnabled(False)
-                self.data_select.setEnabled(False)
+                self.data_select.clear()
+                self.data_select.addItems(self.oct_data.get_keys())
+                self.data_select.setEnabled(True)
+                self._dataselect_label.setEnabled(True)
 
                 self._area_changed(self.curr_area)  # disp data updated here
 
@@ -411,38 +413,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         assert fname.exists()
         return OctDataHdf5(fname)
 
-    def _load_oct_data_mat(self, mat_path: str | Path) -> OctData | None:
+    def _load_oct_data_mat(self, mat_path: str | Path):
         mat_path = Path(mat_path)
         assert mat_path.exists()
-
-        with WaitCursor():
-            mat = sio.loadmat(mat_path)
-
-        keys = [s for s in mat.keys() if not s.startswith("__")]
-
-        key = "I_updated"
-        if key not in keys:
-            d = SingleSelectDialog(
-                msg=f'Key "{key}" not found in "{Path(mat_path).name}".',
-                options=keys,
-                gbtitle="Keys",
-            )
-            ret = d.exec()
-            key = d.get_selected()
-
-            if ret:
-                print(f"Using {key=}")
-            else:
-                self.error_dialog(
-                    f'Key "{key}" not found in "{Path(mat_path).name}". Available keys are {keys}. Please load the cut/aligned Mat file.'
-                )
-                return None
-
-        scans = mat[key]
-        scans = np.moveaxis(scans, -1, 0)
-        assert len(scans) > 0
-
-        return OctData.from_mat_path(mat_path, _imgs=scans)
+        return OctData(mat_path)
 
     def _save_labels(self):
         if self.oct_data:

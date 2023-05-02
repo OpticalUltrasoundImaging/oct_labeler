@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Iterable, Sequence, Mapping, TypeVar, Final
+from typing import Callable, Sequence, Mapping, TypeVar, Final
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -163,17 +163,36 @@ def _merge_neighbours(ls: FRAME_LABEL):
 
 @dataclass
 class OctData:
-    path: Path  # path to the image mat file
-    labels: AREA_LABELS  # [[((10, 20), "normal")]]
+    def __init__(self, mat_path: Path, default_key="I_updated"):
+        import scipy.io as sio
 
-    all_areas: bool = False
+        self.path = mat_path
 
-    @property
-    def imgs(self) -> np.ndarray:
-        if hasattr(self, "_imgs"):
-            return self._imgs
-        self._imgs = self._load_imgs(self.path)
-        return self._imgs
+        # load mat
+        self._mat = sio.loadmat(mat_path)
+        self._keys: list[str] = [s for s in self._mat.keys() if not s.startswith("__")]
+        key = default_key
+        if default_key not in self._keys:
+            key = self._keys[0]
+
+        scans = self._mat[key]
+        scans = np.moveaxis(scans, -1, 0)
+        assert len(scans) > 0
+        self.imgs = scans
+
+        # load labels
+        self.load_labels()
+
+    def set_key(self, key: str):
+        "Set the key in 'areas/idx/I_img' currently used for self.imgs"
+        self.key = k
+        scans = self._mat[key]
+        scans = np.moveaxis(scans, -1, 0)
+        assert len(scans) > 0
+        self.imgs = scans
+
+    def get_keys(self):
+        return self._keys
 
     @property
     def label_path(self) -> Path:
@@ -195,95 +214,8 @@ class OctData:
             self.labels = [None] * len(self.imgs)
 
     @classmethod
-    def from_label_path(cls, label_path: str | Path):
-        """
-        Note: this doesn't load the images, and just load the labels for manipulation
-        """
-        oct_data = OctData(
-            path=cls.img_path_from_label_path(label_path),
-            labels=[],  # load below with .load_labels()
-        )
-        oct_data.load_labels()
-        return oct_data
-
-    @classmethod
-    def from_mat_path(cls, p: str | Path, _imgs: np.ndarray | None = None):
-        oct_data = OctData(
-            path=Path(p),
-            labels=[],  # load below with .load_labels()
-        )
-        if _imgs is not None:
-            oct_data._imgs = _imgs
-        oct_data.load_labels()
-        return oct_data
-
-    @staticmethod
-    def _load_imgs(fname):
-        import scipy.io as sio
-
-        mat = sio.loadmat(fname)
-
-        keys = [s for s in mat.keys() if not s.startswith("__")]
-        key = "I_updated"
-        assert key in keys, f"Available keys in data file: {keys}"
-
-        scans = mat[key]
-        scans = np.moveaxis(scans, -1, 0)
-        assert len(scans) > 0
-        return scans
-
-    @staticmethod
-    def img_path_from_label_path(p: str | Path) -> Path:
-        p = Path(p)
-        return p.parent / (p.stem.replace("_label", "") + ".mat")
-
-    def shift_x(self, dx: int | Iterable[int] | Callable[[int], int]):
-        if self.imgs is None:
-            xlim = 2000
-        else:
-            xlim = self.imgs.shape[-1]
-
-        def _s(x: int, dx: int):
-            return (round(x) + dx + xlim) % xlim
-
-        def mv_one(l: ONE_LABEL, dx: int):
-            (x1, x2), name = l
-            x1, x2 = _s(x1, dx), _s(x2, dx)
-            if x1 < x2:
-                return (((x1, x2), name),)
-            elif x1 > x2:
-                return (((x1, xlim - 1), name), ((0, x2), name))
-            raise ValueError("x1 == x2")
-
-        flatten = lambda l: sorted(x for ll in l for x in ll)
-
-        from tqdm import tqdm
-
-        new_labels: AREA_LABELS = [None] * len(self.labels)
-
-        def _tqdm(it):
-            return tqdm(it, total=len(self.labels), desc="shift_x")
-
-        if isinstance(dx, int):
-            for i, ls in _tqdm(enumerate(self.labels)):
-                if ls is not None:
-                    new_labels[i] = flatten(mv_one(l, dx) for l in ls)
-        elif isinstance(dx, Iterable):
-            for i, (ls, _dx) in _tqdm(enumerate(zip(self.labels, dx))):
-                if ls is not None:
-                    new_labels[i] = flatten(mv_one(l, _dx) for l in ls)
-        elif callable(dx):
-            for i, ls in _tqdm(enumerate(self.labels)):
-                if ls is not None:
-                    _dx = dx(i)
-                    new_labels[i] = flatten(mv_one(l, _dx) for l in ls)
-
-        # merge two labels if they overlap
-        for i, ls in enumerate(new_labels):
-            if ls:
-                new_labels[i] = sorted(_merge_neighbours(ls))
-
-        self.labels = new_labels
+    def from_label_path(cls, p: Path):
+        return cls(p.parent / p.name.replace("_labels.pkl", ".mat"))
 
     def count(self):  # const
         from collections import Counter, defaultdict

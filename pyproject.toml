@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oct_labeler"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
   "PySide6",
   "pyqtgraph",

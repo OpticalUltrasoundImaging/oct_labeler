@@ -12,7 +12,7 @@ import numpy as np
 from .checkable_list import CheckableList
 from ..data import OctData, OctDataHdf5, AREA_LABELS
 from .. import __version__
-from .display_settings_widget import DisplaySettingsWidget
+from .display_settings_widget import DisplaySettingsWidget, log_compress_par
 from .single_select_dialog import SingleSelectDialog
 from .wait_cursor import WaitCursor
 
@@ -64,29 +64,6 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
     def mousePressEvent(self, e):
         self.clicked.emit(self)
         super().mousePressEvent(e)
-
-
-import numba as nb
-
-
-@nb.njit(
-    (nb.float64[:, :, ::1], nb.float64),
-    nogil=True,
-    fastmath=True,
-    parallel=True,
-    cache=True,
-)
-def log_compress_par(x, dB: float):
-    "Log compression with dynamic range dB"
-    maxval = 255.0
-    res = np.empty(x.shape, dtype=np.uint8)
-    l = len(x)
-    for i in nb.prange(l):
-        xmax = np.percentile(x[i], 99.9)
-        lc = 20.0 / dB * np.log10(x[i] / xmax) + 1.0
-        lc = np.clip(lc, 0.0, 1.0)
-        res[i] = (maxval * lc).astype(np.uint8)
-    return res
 
 
 class AppWin(QtWidgets.QMainWindow, WindowMixin):
@@ -174,6 +151,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.disp_settings.sigDynamicRangeChanged.connect(
             partial(self._toggle_dynamic_range, True)
         )
+        self.disp_settings._show_warp.clicked.connect(self._show_warp_cb)
 
         ###################
         ### Labels GroupBox
@@ -293,6 +271,12 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         frame_idx = self.imv.currentIndex
         self._after_load_show()
         self.imv.setCurrentIndex(frame_idx)
+
+    @QtCore.Slot()
+    def _show_warp_cb(self):
+        assert self._imgs is not None
+        img = self._imgs[self.imv.currentIndex]
+        self.disp_settings.show_warp_callback(img)
 
     def _area_changed(self, idx: int = 0):
         """
@@ -554,6 +538,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if self.oct_data is None:
             return
         self._imv_update_linear_regions_from_labels(ind)
+
+        if self.disp_settings._warp_disp:
+            self.disp_settings.show_warp_callback(self._imgs[ind])
 
     def _imv_copy_last_label(self):
         """

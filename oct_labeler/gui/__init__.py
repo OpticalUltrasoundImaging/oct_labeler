@@ -298,6 +298,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         # self._toggle_dynamic_range(self.disp_settings.logCompressionEnabled())
         self.disp_settings._toggle_log_compression(0)  # disable the UI
+        self.disp_settings._log_comp_cb.setChecked(False)
         # self._after_load_show()
 
     def _data_select_changed(self, txt: str):

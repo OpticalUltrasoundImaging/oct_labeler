@@ -103,7 +103,8 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
         self._warp_pad_sb = QtWidgets.QSpinBox()
         self._warp_pad_sb.setMinimum(0)
         self._warp_pad_sb.setMaximum(1000)
-        self._warp_pad_sb.editingFinished.connect
+        self._warp_pad_sb.setValue(250)
+        self._warp_pad_sb.editingFinished.connect(self._handle_pad_changed)
 
         _warp_gb = wrap_groupbox(
             "Warp polar",
@@ -151,6 +152,7 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
         if img is not None:
             if self._warp_disp is None:
                 self._warp_disp = WarpDisp(img)
+                self._warp_disp.pad = self._warp_pad_sb.value()
             else:
                 self._warp_disp.update_img(img)
             self._warp_disp.show()

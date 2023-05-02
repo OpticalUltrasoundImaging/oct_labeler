@@ -31,8 +31,10 @@ def polar2cart(img, pad: int = 250, scale=1.0):
     h, w = img.shape[:2]
     r = round(min(h, w) * scale)
     sz = r * 2
+    img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
     flags = cv2.WARP_POLAR_LINEAR | cv2.WARP_INVERSE_MAP | cv2.WARP_FILL_OUTLIERS
-    img = cv2.warpPolar(img.T, (sz, sz), (r, r), r, flags)
+    img = cv2.warpPolar(img, (sz, sz), (r, r), r, flags)
+    img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
     return img
 
 
@@ -141,12 +143,21 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
     def getDynamicRange(self) -> int:
         return self._drange_sb.value()
 
-    def show_warp_callback(self, img: np.ndarray):
-        if self._warp_disp is None:
-            self._warp_disp = WarpDisp(img)
+    def show_warp_callback(self, img: np.ndarray | None = None):
+        """
+        If img give, try to show img in a WarpDisp window.
+        If img is None, close the WarpDisp if exists
+        """
+        if img is not None:
+            if self._warp_disp is None:
+                self._warp_disp = WarpDisp(img)
+            else:
+                self._warp_disp.update_img(img)
+            self._warp_disp.show()
         else:
-            self._warp_disp.update_img(img)
-        self._warp_disp.show()
+            if self._warp_disp is not None:
+                del self._warp_disp
+                self._warp_disp = None
 
 
 @nb.njit(

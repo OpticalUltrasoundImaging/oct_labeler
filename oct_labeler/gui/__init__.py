@@ -698,6 +698,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             event.ignore()
             return
 
+        # close 2nd window showing Warp
+        self.disp_settings.show_warp_callback(None)
+
         return super().closeEvent(event)
 
     def breakpoint(self):

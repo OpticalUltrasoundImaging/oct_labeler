@@ -296,7 +296,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             else:
                 self._imgs_orig = self.oct_data.imgs
 
-        self._toggle_dynamic_range(self.disp_settings.logCompressionEnabled())
+        # self._toggle_dynamic_range(self.disp_settings.logCompressionEnabled())
+        self.disp_settings._toggle_log_compression(0)  # disable the UI
         # self._after_load_show()
 
     def _data_select_changed(self, txt: str):

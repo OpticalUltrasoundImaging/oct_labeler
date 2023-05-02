@@ -162,13 +162,7 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
                 self._warp_disp = None
 
 
-@nb.njit(
-    (nb.float64[:, :, ::1], nb.float64),
-    nogil=True,
-    fastmath=True,
-    parallel=True,
-    cache=True,
-)
+@nb.njit(nogil=True, fastmath=True, parallel=True, cache=True)
 def log_compress_par(x, dB: float):
     "Log compression with dynamic range dB"
     maxval = 255.0

@@ -6,14 +6,13 @@ import logging
 from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6.QtCore import Qt
 import pyqtgraph as pg
-import scipy.io as sio
 import numpy as np
 
 from .checkable_list import CheckableList
-from ..data import OctData, OctDataHdf5, AREA_LABELS
+from ..data import ScanData, ScanDataMat, ScanDataHdf5, AREA_LABELS
 from .. import __version__
-from .display_settings_widget import DisplaySettingsWidget, log_compress_par
-from .single_select_dialog import SingleSelectDialog
+from ..imgproc import log_compress_par
+from .display_settings_widget import DisplaySettingsWidget
 from .wait_cursor import WaitCursor
 
 from .qt_utils import wrap_boxlayout, wrap_groupbox
@@ -227,7 +226,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         remove_label_btn.clicked.connect(self._remove_last_clicked_label)
 
-        self.oct_data: OctData | OctDataHdf5 | None = None
+        self.oct_data: ScanData | None = None
         self.curr_area = 1
 
         #################
@@ -291,9 +290,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.curr_area = idx
 
         with WaitCursor():
-            if isinstance(self.oct_data, OctDataHdf5):
+            if isinstance(self.oct_data, ScanDataHdf5):
                 self._imgs_orig = self.oct_data.imgs[self.curr_area]
-            elif isinstance(self.oct_data, OctData):
+            elif isinstance(self.oct_data, ScanDataMat):
                 self._imgs_orig = self.oct_data.imgs
 
         # self._toggle_dynamic_range(self.disp_settings.logCompressionEnabled())
@@ -337,8 +336,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         try:
             if Path(self.fname).suffix == ".hdf5":
                 # Setup all states for HDF5 data
-
-                self.oct_data = self._load_oct_data_hdf5(self.fname)
+                self.oct_data = ScanDataHdf5(self.fname)
                 n_areas = self.oct_data.n_areas
 
                 self.area_select.clear()
@@ -354,7 +352,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 self._area_changed(self.curr_area)  # disp data updated here
 
             else:  # .mat
-                self.oct_data = self._load_oct_data_mat(self.fname)
+                self.oct_data = ScanDataMat(self.fname)
 
                 self._area_label.setEnabled(False)
                 self.area_select.setEnabled(False)
@@ -390,8 +388,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         # Compute filename
         path = Path.home() / "Desktop"
         frame_idx = int(self.imv.currentIndex)
-        if isinstance(self.oct_data, OctDataHdf5):  # HDF5 version
-            pid = self.oct_data.hdf5path.parent.stem  # type: ignore
+        if isinstance(self.oct_data, ScanDataHdf5):  # HDF5 version
+            pid = self.oct_data.path.parent.stem  # type: ignore
             path /= f"export_p{pid}_a{self.curr_area + 1}_f{frame_idx}_{self.oct_data.key}.png"
         else:  # Old mat format
             pid = self.oct_data.path.parent.stem.replace(" ", "-")  # type: ignore
@@ -407,16 +405,6 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         # create LinearRegionItem if labels
         self._imv_update_linear_regions_from_labels()
-
-    def _load_oct_data_hdf5(self, fname: str | Path):
-        fname = Path(fname)
-        assert fname.exists()
-        return OctDataHdf5(fname)
-
-    def _load_oct_data_mat(self, mat_path: str | Path):
-        mat_path = Path(mat_path)
-        assert mat_path.exists()
-        return OctData(mat_path)
 
     def _save_labels(self):
         if self.oct_data:
@@ -528,9 +516,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         ind = self.imv.currentIndex
 
-        if isinstance(self.oct_data, OctDataHdf5):
+        if isinstance(self.oct_data, ScanDataHdf5):
             labels: AREA_LABELS = self.oct_data.labels[self.curr_area]  # ref
-        else:
+        elif isinstance(self.oct_data, ScanDataMat):
             labels: AREA_LABELS = self.oct_data.labels  # ref
 
         if ind > 0 and labels[ind - 1]:
@@ -564,7 +552,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self._remove_displayed_linear_regions()
 
         # add current labels from oct_data
-        if isinstance(self.oct_data, OctDataHdf5):
+        if isinstance(self.oct_data, ScanDataHdf5):
             labels = self.oct_data.labels[self.curr_area][ind]
         else:
             labels = self.oct_data.labels[ind]
@@ -596,13 +584,13 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         # get labes for this ind
         assert self.oct_data is not None
-        if isinstance(self.oct_data, OctDataHdf5):
+        if isinstance(self.oct_data, ScanDataHdf5):
             labels = self.oct_data.labels[self.curr_area][ind]
         else:
             labels = self.oct_data.labels[ind]
 
         if labels is None:
-            if isinstance(self.oct_data, OctDataHdf5):
+            if isinstance(self.oct_data, ScanDataHdf5):
                 self.oct_data.labels[self.curr_area][ind] = []
                 labels = self.oct_data.labels[self.curr_area][ind]
             else:

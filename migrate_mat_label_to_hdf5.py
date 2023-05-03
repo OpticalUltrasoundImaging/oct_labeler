@@ -1,6 +1,6 @@
 # %%
 from pathlib import Path
-from oct_labeler.data import OctDataHdf5, shift_x
+from oct_labeler.data import ScanDataHdf5, shift_x
 
 root = Path("/media/tnie/TigerDrive/Data/OCT_invivo/")
 root.exists()
@@ -21,8 +21,8 @@ For each found label file:
 
 for nd in new_dirs:
     print(nd)
-    new_data = OctDataHdf5(nd / "areas.hdf5")
-    old_data = OctDataHdf5(old_dir / nd.name / "areas.hdf5")
+    new_data = ScanDataHdf5(nd / "areas.hdf5")
+    old_data = ScanDataHdf5(old_dir / nd.name / "areas.hdf5")
 
     for area_i in range(new_data.n_areas):
         new_data.labels[area_i] = shift_x(

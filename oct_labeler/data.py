@@ -6,6 +6,7 @@ from pathlib import Path
 import pickle
 import logging
 
+import scipy.io as sio
 import h5py
 import numpy as np
 import cv2
@@ -58,9 +59,36 @@ class LazyDict(Mapping[KT, VT]):
         self._d[k] = v
 
 
-class OctDataHdf5:
+import abc
+
+
+class ScanData(abc.ABC):
+    @abc.abstractmethod
+    def __init__(self, path: Path | str):
+        ...
+
+    @abc.abstractmethod
+    def set_key(self, key: str):
+        ...
+
+    @abc.abstractmethod
+    def get_keys(self) -> list[str]:
+        ...
+
+    @classmethod
+    @abc.abstractmethod
+    def from_label_path(cls, path: Path) -> ScanData:
+        ...
+
+    @abc.abstractmethod
+    def save_labels(self) -> Path:
+        ...
+
+
+class ScanDataHdf5(ScanData):
     def __init__(self, hdf5path: str | Path, default_key="I_imgs"):
-        self.hdf5path = Path(hdf5path)
+        self.path = Path(hdf5path)
+
         self._hdf5file = h5py.File(hdf5path, "r")
 
         self.n_areas = len(self._hdf5file["areas"])  # type: ignore
@@ -93,10 +121,6 @@ class OctDataHdf5:
 
         self.imgs = LazyList(self.n_areas, partial(self._get_area, self.key))
 
-    def _get_area(self, name: str, i: int) -> np.ndarray:
-        # Slicing a h5py dataset produces an np.ndarray
-        return self._hdf5file["areas"][str(i + 1)][name][...]  # type: ignore
-
     def set_key(self, k: str):
         "Set the key in 'areas/idx/I_img' currently used for self.imgs"
         self.key = k
@@ -105,14 +129,24 @@ class OctDataHdf5:
     def get_keys(self):
         return self._keys
 
+    def save_labels(self):
+        p = self.label_path
+        with open(p, "wb") as fp:
+            pickle.dump(self._labels, fp)
+        return p
+
     @classmethod
     def from_label_path(cls, p: Path):
         return cls(p.parent / p.name.replace("_labels.pkl", ".hdf5"))
 
     @property
     def label_path(self):
-        p = self.hdf5path
+        p = self.path
         return p.parent / (p.stem + "_labels.pkl")
+
+    def _get_area(self, name: str, i: int) -> np.ndarray:
+        # Slicing a h5py dataset produces an np.ndarray
+        return self._hdf5file["areas"][str(i + 1)][name][...]  # type: ignore
 
     def _load_labels(self) -> AREAS_LABELS:
         p = self.label_path
@@ -124,11 +158,91 @@ class OctDataHdf5:
         logging.info(f"{self.__class__.__name__}: Label file not found: {p}")
         return [None] * self.n_areas
 
-    def save_labels(self):
+
+@dataclass
+class ScanDataMat(ScanData):
+    def __init__(self, mat_path: Path | str, default_key="I_updated"):
+        self.path = Path(mat_path)
+
+        # load mat
+        self._mat = sio.loadmat(mat_path)
+        self._keys: list[str] = [s for s in self._mat.keys() if not s.startswith("__")]
+        self.key = default_key
+        if default_key not in self._keys:
+            self.key = self._keys[0]
+
+        scans = self._mat[self.key]
+        scans = np.moveaxis(scans, -1, 0)
+        assert len(scans) > 0
+        self.imgs = scans
+
+        # load labels
+        self._load_labels()
+
+    def set_key(self, key: str):
+        "Set the key in 'areas/idx/I_img' currently used for self.imgs"
+        self.key = key
+        scans = self._mat[key]
+        scans = np.moveaxis(scans, -1, 0)
+        assert len(scans) > 0
+        self.imgs = scans
+
+    def get_keys(self):
+        return self._keys
+
+    @property
+    def label_path(self) -> Path:
+        p = self.path
+        return p.parent / (p.stem + "_label.pkl")
+
+    def save_labels(self, path=None) -> Path:
+        label_path = self.label_path if path is None else path
+        with open(label_path, "wb") as fp:
+            pickle.dump(self.labels, fp)
+        return label_path
+
+    def update_imgs(self, imgs: np.ndarray):
+        self.imgs = imgs
+        self._mat[self.key] = imgs
+
+    def save_imgs(self, path=None) -> Path:
+        path = self.label_path if path is None else path
+
+        _savemat = {}
+        for k, v in self._mat.items():
+            if isinstance(v, np.ndarray):
+                v = np.moveaxis(v, 0, -1)
+            _savemat[k] = v
+        sio.savemat(path, _savemat)
+        return path
+
+    def _load_labels(self):
+        "Internal helper to load labels"
         p = self.label_path
-        with open(p, "wb") as fp:
-            pickle.dump(self._labels, fp)
-        return p
+        if p.exists():
+            with open(self.label_path, "rb") as fp:
+                self.labels = pickle.load(fp)
+        else:
+            self.labels = [None] * len(self.imgs)
+
+    @classmethod
+    def from_label_path(cls, p: Path):
+        return cls(p.parent / p.name.replace("_labels.pkl", ".mat"))
+
+
+def count_labels(labels: AREA_LABELS):
+    from collections import Counter, defaultdict
+
+    total_width: defaultdict[str, int] = defaultdict(int)
+    count: defaultdict[str, int] = defaultdict(int)
+    for l in labels:
+        if not l:
+            continue
+        for ll in l:
+            total_width[ll[1]] += abs(round(ll[0][1] - ll[0][0]))
+            count[ll[1]] += 1
+
+    return Counter(count), Counter(total_width)
 
 
 def _merge_neighbours(ls: FRAME_LABEL):
@@ -159,77 +273,6 @@ def _merge_neighbours(ls: FRAME_LABEL):
         continue
 
     yield prev
-
-
-@dataclass
-class OctData:
-    def __init__(self, mat_path: Path, default_key="I_updated"):
-        import scipy.io as sio
-
-        self.path = mat_path
-
-        # load mat
-        self._mat = sio.loadmat(mat_path)
-        self._keys: list[str] = [s for s in self._mat.keys() if not s.startswith("__")]
-        key = default_key
-        if default_key not in self._keys:
-            key = self._keys[0]
-
-        scans = self._mat[key]
-        scans = np.moveaxis(scans, -1, 0)
-        assert len(scans) > 0
-        self.imgs = scans
-
-        # load labels
-        self.load_labels()
-
-    def set_key(self, key: str):
-        "Set the key in 'areas/idx/I_img' currently used for self.imgs"
-        self.key = k
-        scans = self._mat[key]
-        scans = np.moveaxis(scans, -1, 0)
-        assert len(scans) > 0
-        self.imgs = scans
-
-    def get_keys(self):
-        return self._keys
-
-    @property
-    def label_path(self) -> Path:
-        p = self.path
-        return p.parent / (p.stem + "_label.pkl")
-
-    def save_labels(self):
-        label_path = self.label_path
-        with open(label_path, "wb") as fp:
-            pickle.dump(self.labels, fp)
-        return label_path
-
-    def load_labels(self):
-        p = self.label_path
-        if p.exists():
-            with open(self.label_path, "rb") as fp:
-                self.labels = pickle.load(fp)
-        else:
-            self.labels = [None] * len(self.imgs)
-
-    @classmethod
-    def from_label_path(cls, p: Path):
-        return cls(p.parent / p.name.replace("_labels.pkl", ".mat"))
-
-    def count(self):  # const
-        from collections import Counter, defaultdict
-
-        total_width = defaultdict(int)
-        count = defaultdict(int)
-        for l in self.labels:
-            if not l:
-                continue
-            for ll in l:
-                total_width[ll[1]] += abs(round(ll[0][1] - ll[0][0]))
-                count[ll[1]] += 1
-
-        return Counter(count), Counter(total_width)
 
 
 def calc_offset_x(a: np.ndarray, b: np.ndarray, yslice=None):
@@ -380,7 +423,7 @@ class TestHdf5Data(unittest.TestCase):
                     group.create_dataset(k, data=v)
 
     def test_hdf5_data(self):
-        d = OctDataHdf5(self.fp.name)
+        d = ScanDataHdf5(self.fp.name)
         self.assertEqual(d.n_areas, len(self.data))
         self.assertEqual(d._keys, ["bin_imgs", "imgs"])
 

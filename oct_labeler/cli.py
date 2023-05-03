@@ -2,7 +2,7 @@ from pathlib import Path
 import click
 
 from oct_labeler.gui import gui_main
-from oct_labeler.data import OctData
+from oct_labeler.data import ScanDataMat
 
 
 @click.group()
@@ -20,7 +20,7 @@ def gui():
 def inspect(label_path: str):
     click.echo(f"Inspecting {label_path}")
 
-    oct_data = OctData.from_label_path(label_path)
+    oct_data = ScanDataMat(label_path)
     click.echo(oct_data.count())
 
 
@@ -41,7 +41,7 @@ def inspect_all(recursive: bool, path: str):
     c_all = Counter()
     width_all = Counter()
     for label_file in label_files:
-        oct_data = OctData.from_label_path(label_file)
+        oct_data = ScanDataMat.from_label_path(label_file)
         count, total_width = oct_data.count()
         c_all += count
         width_all += total_width
@@ -61,7 +61,7 @@ def migrate(dry: bool, label_path: str, old_name: str, new_name: str):
         f"Migrating {label_path}: {old_name} -> {new_name} {'(dry run)' if dry else ''}"
     )
 
-    oct_data = OctData.from_label_path(label_path)
+    oct_data = ScanDataMat.from_label_path(label_path)
 
     n_modified = 0
     labels = oct_data.labels  # ref

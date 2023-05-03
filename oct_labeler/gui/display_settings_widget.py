@@ -1,11 +1,11 @@
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QImage, QPixmap
 import cv2
-import numba as nb
 import numpy as np
 
 
 from .qt_utils import wrap_boxlayout, wrap_groupbox
+from ..imgproc import polar2cart
 
 
 def qimg_from_np(img: np.ndarray) -> QImage:
@@ -19,23 +19,6 @@ def qimg_from_np(img: np.ndarray) -> QImage:
         assert img.shape[-1] == 3
         format = Format.Format_RGB888
     return QImage(img.data, img.shape[1], img.shape[0], format)
-
-
-def polar2cart(img, pad: int = 250, scale=1.0):
-    """
-    Polar (linear) to cartesian (circular) image.
-    pad: padding at the top to compensate for probe radius
-    scale: default 1.0. Use smaller to get smaller image output
-    """
-    img = cv2.copyMakeBorder(img, pad, 0, 0, 0, cv2.BORDER_CONSTANT, value=0)
-    h, w = img.shape[:2]
-    r = round(min(h, w) * scale)
-    sz = r * 2
-    img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    flags = cv2.WARP_POLAR_LINEAR | cv2.WARP_INVERSE_MAP | cv2.WARP_FILL_OUTLIERS
-    img = cv2.warpPolar(img, (sz, sz), (r, r), r, flags)
-    img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    return img
 
 
 class WarpDisp(QtWidgets.QWidget):
@@ -160,17 +143,3 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
             if self._warp_disp is not None:
                 del self._warp_disp
                 self._warp_disp = None
-
-
-@nb.njit(nogil=True, fastmath=True, parallel=True, cache=True)
-def log_compress_par(x, dB: float):
-    "Log compression with dynamic range dB"
-    maxval = 255.0
-    res = np.empty(x.shape, dtype=np.uint8)
-    l = len(x)
-    for i in nb.prange(l):
-        xmax = np.percentile(x[i], 99.9)
-        lc = 20.0 / dB * np.log10(x[i] / xmax) + 1.0
-        lc = np.clip(lc, 0.0, 1.0)
-        res[i] = (maxval * lc).astype(np.uint8)
-    return res

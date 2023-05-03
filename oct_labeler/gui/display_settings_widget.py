@@ -1,25 +1,23 @@
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtGui import QImage, QPixmap
-import cv2
 import numpy as np
 
 
 from .qt_utils import wrap_boxlayout, wrap_groupbox
 from ..imgproc import polar2cart
+from .fix_offcenter import FixOffcenterGui
 
+            
+def qimg_from_np(img: np.ndarray):
+    if len(img.shape) == 2:  # grayscale
+        h, w = img.shape
+        bytes_per_line = w
+        return QImage(img.data, w, h, bytes_per_line, QImage.Format.Format_Grayscale8)
 
-def qimg_from_np(img: np.ndarray) -> QImage:
-    Format = QImage.Format
-    img = np.ascontiguousarray(img, dtype=np.uint8)
-    breakpoint()
-    if len(img.shape) == 2:
-        format = Format.Format_Grayscale8
-    else:
-        assert len(img.shape) == 3
-        assert img.shape[-1] == 3
-        format = Format.Format_RGB888
-    return QImage(img.data, img.shape[1], img.shape[0], format)
-
+    h, w, ch = img.shape
+    assert ch == 3
+    bytes_per_line = w * ch
+    return QImage(img.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
 
 class WarpDisp(QtWidgets.QWidget):
     def __init__(self, img: np.ndarray):
@@ -42,16 +40,14 @@ class WarpDisp(QtWidgets.QWidget):
         else:
             self._img = img
         cart = polar2cart(img, self.pad, self.scale)
-        cv2.imwrite("cart.png", cart)
-        # qimg = qimg_from_np(cart)
-        # qimg.save("wtf.png")
-        qimg = QImage("cart.png")
+        qimg = qimg_from_np(cart)
         self.pic.setPixmap(QPixmap.fromImage(qimg))
 
 
 class DisplaySettingsWidget(QtWidgets.QGroupBox):
     sigToggleLogCompression = QtCore.Signal(bool)
     sigDynamicRangeChanged = QtCore.Signal()
+    sigOpenOffcenterGui = QtCore.Signal()
 
     def __init__(self, parent=None, default_dr=50):
         super().__init__("Display", parent)
@@ -76,7 +72,7 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
         self._show_warp.setText("Show warp")
 
         _log_compression_gb = wrap_groupbox(
-            "Log compression",
+            "",
             self._log_comp_cb,
             [self._drange_lbl, self._drange_sb],
         )
@@ -90,12 +86,17 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
         self._warp_pad_sb.editingFinished.connect(self._handle_pad_changed)
 
         _warp_gb = wrap_groupbox(
-            "Warp polar",
-            [self._warp_pad_lbl, self._warp_pad_sb],
+            "",
             self._show_warp,
+            [self._warp_pad_lbl, self._warp_pad_sb],
         )
 
-        self.setLayout(wrap_boxlayout(_log_compression_gb, _warp_gb, boxdir="v"))
+        self._fix_offcenter = QtWidgets.QPushButton()
+        self._fix_offcenter.setText("Fix offcenter")
+        self._fix_offcenter.clicked.connect(self._handle_fix_offcenter)
+        self._fix_offcenter_gui = None
+
+        self.setLayout(wrap_boxlayout(_log_compression_gb, _warp_gb, self._fix_offcenter,  boxdir="v"))
 
         self._warp_disp = None
 
@@ -120,6 +121,14 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
         if self._warp_disp:
             self._warp_disp.pad = pad
             self._warp_disp.update_img()
+
+    @QtCore.Slot()
+    def _handle_fix_offcenter(self):
+        self.sigOpenOffcenterGui.emit()
+
+    def fix_offcenter_callback(self, image: np.ndarray):
+        self._fix_offcenter_gui = FixOffcenterGui(image)
+        self._fix_offcenter_gui.show()
 
     def logCompressionEnabled(self) -> bool:
         return self._log_comp_cb.isChecked()

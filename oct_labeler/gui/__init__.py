@@ -157,7 +157,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         ###################
         save_label_btn = QtWidgets.QPushButton("&Save labels", self)
         save_label_btn.clicked.connect(self._save_labels)
-        duplicate_labels_btn = QtWidgets.QPushButton("&Copy last labels", self)
+        duplicate_labels_btn = QtWidgets.QPushButton("&Copy previous labels", self)
         duplicate_labels_btn.clicked.connect(self._imv_copy_last_label)
         remove_label_btn = QtWidgets.QPushButton("&Delete last touched label", self)
         add_label_btn = QtWidgets.QPushButton("&Add label", self)
@@ -520,6 +520,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             labels: AREA_LABELS = self.oct_data.labels[self.curr_area]  # ref
         elif isinstance(self.oct_data, ScanDataMat):
             labels: AREA_LABELS = self.oct_data.labels  # ref
+        else:
+            raise ValueError(f"Unknown data type: {self.oct_data}")
 
         if ind > 0 and labels[ind - 1]:
             labels[ind] = deepcopy(labels[ind - 1])

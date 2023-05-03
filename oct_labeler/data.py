@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import Callable, Sequence, Mapping, TypeVar, Final
-from dataclasses import dataclass
+from typing import Callable, Sequence, Mapping, NamedTuple, TypeVar, Final
+from collections import Counter, defaultdict
 from functools import partial
 from pathlib import Path
 import pickle
@@ -21,6 +21,8 @@ AREAS_LABELS = list[AREA_LABELS | None]
 
 KT = TypeVar("KT")
 VT = TypeVar("VT")
+
+LABELS_EXT = "_labels.pkl"
 
 
 class LazyList(Sequence[VT]):
@@ -137,12 +139,12 @@ class ScanDataHdf5(ScanData):
 
     @classmethod
     def from_label_path(cls, p: Path):
-        return cls(p.parent / p.name.replace("_labels.pkl", ".hdf5"))
+        return cls(p.parent / p.name.replace(LABELS_EXT, ".hdf5"))
 
     @property
     def label_path(self):
         p = self.path
-        return p.parent / (p.stem + "_labels.pkl")
+        return p.parent / (p.stem + LABELS_EXT)
 
     def _get_area(self, name: str, i: int) -> np.ndarray:
         # Slicing a h5py dataset produces an np.ndarray
@@ -159,7 +161,6 @@ class ScanDataHdf5(ScanData):
         return [None] * self.n_areas
 
 
-@dataclass
 class ScanDataMat(ScanData):
     def __init__(self, mat_path: Path | str, default_key="I_updated"):
         self.path = Path(mat_path)
@@ -193,7 +194,7 @@ class ScanDataMat(ScanData):
     @property
     def label_path(self) -> Path:
         p = self.path
-        return p.parent / (p.stem + "_label.pkl")
+        return p.parent / (p.stem + LABELS_EXT)
 
     def save_labels(self, path=None) -> Path:
         label_path = self.label_path if path is None else path
@@ -227,14 +228,17 @@ class ScanDataMat(ScanData):
 
     @classmethod
     def from_label_path(cls, p: Path):
-        return cls(p.parent / p.name.replace("_labels.pkl", ".mat"))
+        return cls(p.parent / p.name.replace(LABELS_EXT, ".mat"))
+
+
+class LabelCounts(NamedTuple):
+    count: Counter[str]  # number of ROIs
+    width: Counter[str]  # total width of the label in pixels
 
 
 def count_labels(labels: AREA_LABELS):
-    from collections import Counter, defaultdict
-
-    total_width: defaultdict[str, int] = defaultdict(int)
     count: defaultdict[str, int] = defaultdict(int)
+    total_width: defaultdict[str, int] = defaultdict(int)
     for l in labels:
         if not l:
             continue
@@ -242,7 +246,7 @@ def count_labels(labels: AREA_LABELS):
             total_width[ll[1]] += abs(round(ll[0][1] - ll[0][0]))
             count[ll[1]] += 1
 
-    return Counter(count), Counter(total_width)
+    return LabelCounts(count=Counter(count), width=Counter(total_width))
 
 
 def _merge_neighbours(ls: FRAME_LABEL):

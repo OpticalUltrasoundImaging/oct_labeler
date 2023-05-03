@@ -2,7 +2,7 @@ from pathlib import Path
 import click
 
 from oct_labeler.gui import gui_main
-from oct_labeler.data import ScanDataMat
+from oct_labeler.data import ScanDataMat, count_labels, LABELS_EXT
 
 
 @click.group()
@@ -20,8 +20,8 @@ def gui():
 def inspect(label_path: str):
     click.echo(f"Inspecting {label_path}")
 
-    oct_data = ScanDataMat(label_path)
-    click.echo(oct_data.count())
+    oct_data = ScanDataMat.from_label_path(Path(label_path))
+    click.echo(count_labels(oct_data.labels))
 
 
 @click.command()
@@ -30,9 +30,9 @@ def inspect(label_path: str):
 def inspect_all(recursive: bool, path: str):
     root = Path(path)
     if recursive:
-        label_files = sorted(root.glob("**/*_label.pkl"))
+        label_files = sorted(root.glob("**/*" + LABELS_EXT))
     else:
-        label_files = sorted(root.glob("*_label.pkl"))
+        label_files = sorted(root.glob("*" + LABELS_EXT))
 
     click.echo(f"Found {len(label_files)} label files in {path}")
 
@@ -42,10 +42,10 @@ def inspect_all(recursive: bool, path: str):
     width_all = Counter()
     for label_file in label_files:
         oct_data = ScanDataMat.from_label_path(label_file)
-        count, total_width = oct_data.count()
-        c_all += count
-        width_all += total_width
-        click.echo(f"{label_file.relative_to(root)}: {count}")
+        res = count_labels(oct_data.labels)
+        c_all += res.count
+        width_all += res.width
+        click.echo(f"{label_file.relative_to(root)}:\t{res.count}")
 
     click.echo(f"\nTotal count: {c_all}")
     click.echo(f"Total width: {width_all}")

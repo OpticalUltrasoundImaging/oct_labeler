@@ -5,6 +5,7 @@ from functools import partial
 from pathlib import Path
 import pickle
 import logging
+import shutil
 
 import scipy.io as sio
 import h5py
@@ -91,7 +92,7 @@ class ScanDataHdf5(ScanData):
     def __init__(self, hdf5path: str | Path, default_key="I_imgs"):
         self.path = Path(hdf5path)
 
-        self._hdf5file = h5py.File(hdf5path, "r")
+        self._hdf5file = h5py.File(hdf5path, "r")  # open readonly
 
         self.n_areas = len(self._hdf5file["areas"])  # type: ignore
         self._areas = list(self._hdf5file["areas"].keys())  # type: ignore
@@ -105,7 +106,7 @@ class ScanDataHdf5(ScanData):
                 assert k in self._hdf5file["areas"][idx]  # type: ignore
 
         # labels[area_idx][img_idx]
-        self._labels: AREAS_LABELS = self._load_labels()
+        self._labels = self.load_labels()
 
         def _init_labels(i: int) -> AREA_LABELS:
             return [None] * len(self.imgs[i])  # type: ignore
@@ -150,14 +151,27 @@ class ScanDataHdf5(ScanData):
         # Slicing a h5py dataset produces an np.ndarray
         return self._hdf5file["areas"][str(i + 1)][name][...]  # type: ignore
 
-    def _load_labels(self) -> AREAS_LABELS:
-        p = self.label_path
-        if p.exists():
-            with open(self.label_path, "rb") as fp:
-                lbls = pickle.load(fp)
-                return lbls
+    def update_area(self, i: int, imgs: np.ndarray):
+        self.imgs[i] = imgs
 
-        logging.info(f"{self.__class__.__name__}: Label file not found: {p}")
+    def save_imgs(self, newpath: Path) -> Path:
+        "creates a copy of the HDF5 and copies the current data to it."
+        assert newpath != self.path
+        shutil.copy(self.path, newpath)
+        newh5 = h5py.File(newpath, "r+")  # open read write
+        for i in range(self.n_areas):
+            newh5["areas"][str(i + 1)][self.key][...] = self.imgs[i]  # type: ignore
+        newh5.close()
+        return newpath
+
+    def load_labels(self) -> AREAS_LABELS:
+        if self.label_path.exists():
+            with open(self.label_path, "rb") as fp:
+                return pickle.load(fp)
+
+        logging.info(
+            f"{self.__class__.__name__}: Label file not found: {self.label_path}"
+        )
         return [None] * self.n_areas
 
 
@@ -178,7 +192,7 @@ class ScanDataMat(ScanData):
         self.imgs = scans
 
         # load labels
-        self._load_labels()
+        self.labels = self.load_labels()
 
     def set_key(self, key: str):
         "Set the key in 'areas/idx/I_img' currently used for self.imgs"
@@ -202,13 +216,21 @@ class ScanDataMat(ScanData):
             pickle.dump(self.labels, fp)
         return label_path
 
+    def load_labels(self) -> AREA_LABELS:
+        "Internal helper to load labels"
+        if self.label_path.exists():
+            with open(self.label_path, "rb") as fp:
+                return pickle.load(fp)
+        logging.info(
+            f"{self.__class__.__name__}: Label file not found: {self.label_path}"
+        )
+        return [None] * len(self.imgs)
+
     def update_imgs(self, imgs: np.ndarray):
         self.imgs = imgs
         self._mat[self.key] = imgs
 
-    def save_imgs(self, path=None) -> Path:
-        path = self.label_path if path is None else path
-
+    def save_imgs(self, path: Path) -> Path:
         _savemat = {}
         for k, v in self._mat.items():
             if isinstance(v, np.ndarray):
@@ -216,15 +238,6 @@ class ScanDataMat(ScanData):
             _savemat[k] = v
         sio.savemat(path, _savemat)
         return path
-
-    def _load_labels(self):
-        "Internal helper to load labels"
-        p = self.label_path
-        if p.exists():
-            with open(self.label_path, "rb") as fp:
-                self.labels = pickle.load(fp)
-        else:
-            self.labels = [None] * len(self.imgs)
 
     @classmethod
     def from_label_path(cls, p: Path):

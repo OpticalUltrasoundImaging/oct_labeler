@@ -7,7 +7,7 @@ from .qt_utils import wrap_boxlayout, wrap_groupbox
 from ..imgproc import polar2cart
 from .fix_offcenter import FixOffcenterGui
 
-            
+
 def qimg_from_np(img: np.ndarray):
     if len(img.shape) == 2:  # grayscale
         h, w = img.shape
@@ -18,6 +18,7 @@ def qimg_from_np(img: np.ndarray):
     assert ch == 3
     bytes_per_line = w * ch
     return QImage(img.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+
 
 class WarpDisp(QtWidgets.QWidget):
     def __init__(self, img: np.ndarray):
@@ -96,7 +97,11 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
         self._fix_offcenter.clicked.connect(self._handle_fix_offcenter)
         self._fix_offcenter_gui = None
 
-        self.setLayout(wrap_boxlayout(_log_compression_gb, _warp_gb, self._fix_offcenter,  boxdir="v"))
+        self.setLayout(
+            wrap_boxlayout(
+                _log_compression_gb, _warp_gb, self._fix_offcenter, boxdir="v"
+            )
+        )
 
         self._warp_disp = None
 
@@ -128,7 +133,7 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
 
     def fix_offcenter_callback(self, image: np.ndarray):
         self._fix_offcenter_gui = FixOffcenterGui(image)
-        self._fix_offcenter_gui.show()
+        self._fix_offcenter_gui.showMaximized()
 
     def logCompressionEnabled(self) -> bool:
         return self._log_comp_cb.isChecked()

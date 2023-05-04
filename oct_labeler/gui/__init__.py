@@ -152,7 +152,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             partial(self._toggle_dynamic_range, True)
         )
         self.disp_settings._show_warp.clicked.connect(self._show_warp_cb)
-        self.disp_settings.sigOpenOffcenterGui.connect(lambda: self.disp_settings.fix_offcenter_callback(self._imgs[self.imv.currentIndex]))
+        self.disp_settings.sigOpenOffcenterGui.connect(
+            lambda: self.disp_settings.fix_offcenter_callback(
+                self._imgs[self.imv.currentIndex]
+            )
+        )
 
         ###################
         ### Labels GroupBox

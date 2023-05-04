@@ -1,7 +1,7 @@
 from typing import NamedTuple
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt, QPointF
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPen
+from PySide6.QtGui import QImage, QPainter, QPen
 import numpy as np
 import cv2
 
@@ -192,18 +192,25 @@ class FixOffcenterGui(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout()
         self.setLayout(layout)
 
+        # these QLabels are just placeholders so that QBoxLayout
+        # can scale them, and we override paintEvent to draw images
+        # in them
         self.disp_linear = QtWidgets.QLabel()
         self.disp_linear_fix = QtWidgets.QLabel()
-        # self.disp_circ = QtWidgets.QLabel()
         layout.addWidget(self.disp_linear)
         layout.addWidget(self.disp_linear_fix)
 
         self.disp_circ = None
         self.circ_scale: float = 0.5
+        self.dx = 0.0
+        self.dy = 0.0
 
         self.img_linear = None
         self.img_linear_fix = None
         self.img_circ = None
+
+        self.qimg_linear = None
+        self.qimg_linear_fix = None
 
         if image is None:
             btn = QtWidgets.QPushButton()
@@ -225,11 +232,10 @@ class FixOffcenterGui(QtWidgets.QWidget):
 
     def update_image(self, image: np.ndarray):
         self.img_linear = image
-        self.qimg_linear = qimg_from_np(self.img_linear)
         self.img_circ = polar2cart(self.img_linear, 250, self.circ_scale)
 
-        self.disp_linear.setPixmap(QPixmap.fromImage(self.qimg_linear))
-        self.disp_linear_fix.setPixmap(QPixmap.fromImage(qimg_from_np(self.img_linear)))
+        self.qimg_linear = qimg_from_np(self.img_linear)
+        self.qimg_linear_fix = self.qimg_linear
 
         self.disp_circ = Canvas(self.img_circ)
         self.disp_circ.sigUpdateOffset.connect(self.update_offset)
@@ -238,10 +244,28 @@ class FixOffcenterGui(QtWidgets.QWidget):
 
     @QtCore.Slot()
     def update_offset(self, dx: float, dy: float):
+        assert self.img_linear is not None
+        self.dx = dx
+        self.dy = dy
         img_linear_fix = correct_offcenter(
             self.img_linear, dx, dy, scale=self.circ_scale
         )
-        self.disp_linear_fix.setPixmap(QPixmap.fromImage(qimg_from_np(img_linear_fix)))
+        self.qimg_linear_fix = qimg_from_np(img_linear_fix)
+        self.update()
+
+    @staticmethod
+    def _paint_img_in_widget(qp: QPainter, widget: QtWidgets.QWidget, img: QImage):
+        img = img.scaled(widget.size(), Qt.AspectRatioMode.KeepAspectRatio)
+        qp.drawImage(widget.frameGeometry(), img)
+
+    def paintEvent(self, event: QtGui.QPaintEvent):
+        qp = QPainter(self)
+        qp.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self.qimg_linear:
+            self._paint_img_in_widget(qp, self.disp_linear, self.qimg_linear)
+        if self.qimg_linear_fix:
+            self._paint_img_in_widget(qp, self.disp_linear_fix, self.qimg_linear_fix)
+        return super().paintEvent(event)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.disp_circ:
@@ -255,5 +279,5 @@ if __name__ == "__main__":
 
     app = QtWidgets.QApplication(sys.argv)
     win = FixOffcenterGui()
-    win.show()
+    win.showMaximized()
     app.exec()

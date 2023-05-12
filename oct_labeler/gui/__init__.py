@@ -14,7 +14,6 @@ from .. import __version__
 from ..imgproc import log_compress_par
 from .display_settings_widget import DisplaySettingsWidget
 from .wait_cursor import WaitCursor
-from .fix_offcenter import FixOffcenterGui
 
 from .qt_utils import wrap_boxlayout, wrap_groupbox
 
@@ -67,7 +66,7 @@ class LinearRegionItemClickable(pg.LinearRegionItem):
 
 
 class AppWin(QtWidgets.QMainWindow, WindowMixin):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
 
@@ -116,6 +115,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         export_img_btn = QtWidgets.QPushButton("&Export Image", self)
         export_img_btn.clicked.connect(self._export_image)
+        export_img_stack_btn = QtWidgets.QPushButton("Export Image Stack", self)
+        export_img_stack_btn.clicked.connect(self._export_image_stack)
 
         if OCT_LABELER_DEBUG:
             debug_btn = QtWidgets.QPushButton("Breakpoint")
@@ -128,6 +129,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 time_dec_btn,
                 time_inc_btn,
                 export_img_btn,
+                export_img_stack_btn,
                 debug_btn,
             )
         else:
@@ -138,6 +140,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 time_dec_btn,
                 time_inc_btn,
                 export_img_btn,
+                export_img_stack_btn,
             )
 
         self.nav_gb.setEnabled(False)
@@ -390,7 +393,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.text_msg.setText("Opened " + self.fname)
 
     @QtCore.Slot()
-    def _export_image(self):
+    def _export_image(self) -> None:
         # Compute filename
         path = Path.home() / "Desktop"
         frame_idx = int(self.imv.currentIndex)
@@ -405,14 +408,19 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.imv.imageItem.save(str(path))
         self.status_msg(f"Exported image to {path}")
 
-    def _after_load_show(self):
+    @QtCore.Slot()
+    def _export_image_stack(self) -> None:
+        # TODO
+        self.oct_data
+
+    def _after_load_show(self) -> None:
         # show images
         self.imv.setImage(self._imgs)
 
         # create LinearRegionItem if labels
         self._imv_update_linear_regions_from_labels()
 
-    def _save_labels(self):
+    def _save_labels(self) -> None:
         if self.oct_data:
             label_path = self.oct_data.save_labels()
             self.dirty = False
@@ -430,6 +438,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if not self.oct_data:
             return
 
+        assert self._imgs
         x_max = self._imgs.shape[-1]
 
         if rgn is None:
@@ -501,18 +510,19 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self._imv_linear_region_change_finished()
 
     @QtCore.Slot()
-    def _imv_time_changed(self, ind, _):
+    def _imv_time_changed(self, ind: int, _) -> None:
         """
         callback for when ImageView's time changes (moved to a new image)
         """
         if self.oct_data is None:
             return
+        assert self._imgs
         self._imv_update_linear_regions_from_labels(ind)
 
         if self.disp_settings._warp_disp:
             self.disp_settings.show_warp_callback(self._imgs[ind])
 
-    def _imv_copy_last_label(self):
+    def _imv_copy_last_label(self) -> None:
         """
         For the current frame, try to copy the labels from the last (previous) frame.
         If the previous frame doesn't have labels, try to copy labels from the next frame.
@@ -525,7 +535,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if isinstance(self.oct_data, ScanDataHdf5):
             labels: AREA_LABELS = self.oct_data.labels[self.curr_area]  # ref
         elif isinstance(self.oct_data, ScanDataMat):
-            labels: AREA_LABELS = self.oct_data.labels  # ref
+            labels = self.oct_data.labels  # ref
         else:
             raise ValueError(f"Unknown data type: {self.oct_data}")
 
@@ -537,7 +547,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         # update display
         self._imv_update_linear_regions_from_labels(ind)
 
-    def _remove_displayed_linear_regions(self):
+    def _remove_displayed_linear_regions(self) -> None:
         # remove current LinearRegionItem and TextItem from the
         # view_box and from the imv_region2label cache
         view_box = self.imv.getView()

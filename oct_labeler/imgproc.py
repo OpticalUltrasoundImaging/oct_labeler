@@ -3,7 +3,7 @@ import numpy as np
 import numba as nb
 
 
-def polar2cart(img, pad: int = 250, scale=1.0):
+def polar2cart(img: np.ndarray, pad: int = 250, scale=1.0) -> np.ndarray:
     """
     Polar (linear) to cartesian (circular) image.
     pad: padding at the top to compensate for probe radius

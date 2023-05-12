@@ -18,9 +18,15 @@ class CheckableList(QtWidgets.QListWidget):
     Unchecked = Qt.CheckState.Unchecked
 
     def __init__(self, items: list[str] | list[tuple[str, bool]] = []):
+        """
+
+        ...
+        The mypy can't figure out the typing of items with default empty list.
+        https://github.com/python/mypy/issues/6463
+        """
         super().__init__()
         _size_policy = self.sizePolicy()
-        _size_policy.setVerticalPolicy(QtWidgets.QSizePolicy.Minimum)
+        _size_policy.setVerticalPolicy(QtWidgets.QSizePolicy.Policy.Minimum)
         self.setUniformItemSizes(True)
 
         self._items_l: list[QtWidgets.QListWidgetItem] = []

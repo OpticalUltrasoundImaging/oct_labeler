@@ -9,7 +9,7 @@ _WidgetsOrLayouts = _WidgetOrLayout | Iterable[_WidgetOrLayout]
 
 def wrap_boxlayout(*widgets: _WidgetsOrLayouts, boxdir="v"):
     if boxdir == "v":
-        layout = QtWidgets.QVBoxLayout()
+        layout: QBoxLayout = QtWidgets.QVBoxLayout()
         boxdir = "h"
     else:
         layout = QtWidgets.QHBoxLayout()

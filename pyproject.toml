@@ -18,3 +18,8 @@ dependencies = [
 
 [project.scripts]
 oct_labeler = "oct_labeler.cli:cli"
+
+[[tool.mypy.overrides]]
+module = ["cv2.*", "scipy.*", "pyqtgraph.*", "h5py.*", "numba.*"]
+ignore_missing_imports = true
+

@@ -2,7 +2,13 @@ from pathlib import Path
 import click
 
 from oct_labeler.gui import gui_main
-from oct_labeler.data import ScanDataMat, count_labels, LABELS_EXT
+from oct_labeler.data import (
+    ScanData,
+    ScanDataHdf5,
+    ScanDataMat,
+    count_labels,
+    LABELS_EXT,
+)
 
 
 @click.group()
@@ -13,6 +19,19 @@ def cli():
 @click.command()
 def gui():
     gui_main()
+
+
+@click.command()
+@click.argument("data_path")
+def interact(data_path: str):
+    path = Path(data_path)
+    if path.suffix == ".hdf5":
+        data: ScanData = ScanDataHdf5(path)
+    elif path.suffix == ".mat":
+        data = ScanDataMat(path)
+    else:
+        raise TypeError(f"{path} is not a valid data file.")
+    breakpoint()
 
 
 @click.command()
@@ -38,14 +57,14 @@ def inspect_all(recursive: bool, path: str):
 
     from collections import Counter
 
-    c_all = Counter()
-    width_all = Counter()
+    c_all: Counter[str] = Counter()
+    width_all: Counter[str] = Counter()
     for label_file in label_files:
         oct_data = ScanDataMat.from_label_path(label_file)
         res = count_labels(oct_data.labels)
-        c_all += res.count
+        c_all += res.c
         width_all += res.width
-        click.echo(f"{label_file.relative_to(root)}:\t{res.count}")
+        click.echo(f"{label_file.relative_to(root)}:\t{res.c}")
 
     click.echo(f"\nTotal count: {c_all}")
     click.echo(f"Total width: {width_all}")
@@ -88,6 +107,7 @@ cli.add_command(gui)
 cli.add_command(inspect)
 cli.add_command(inspect_all)
 cli.add_command(migrate)
+cli.add_command(interact)
 
 if __name__ == "__main__":
     cli()

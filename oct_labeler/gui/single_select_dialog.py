@@ -32,14 +32,17 @@ class SingleSelectDialog(QtWidgets.QDialog):
         def make_cb(s):
             return lambda: self.set_selected(s)
 
-        [bn.clicked.connect(make_cb(s)) for bn, s in zip(btns, options)]
+        for bn, s in zip(btns, options):
+            bn.clicked.connect(make_cb(s))
 
         vbox = QtWidgets.QVBoxLayout()
-        [vbox.addWidget(bt) for bt in btns]
+        for bt in btns:
+            vbox.addWidget(bt)
         groupbox.setLayout(vbox)
 
         buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
         )
         layout.addWidget(buttons)
 

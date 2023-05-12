@@ -1,12 +1,13 @@
 from __future__ import annotations
-from typing import Callable, Sequence, Mapping, NamedTuple, TypeVar, Final
+from typing import Any, Callable, Sequence, Mapping, NamedTuple, TypeVar, Final
 from collections import Counter, defaultdict
-from functools import partial
+from functools import partial, singledispatchmethod
 from pathlib import Path
 import pickle
 import logging
 import shutil
 
+from tqdm import tqdm
 import scipy.io as sio
 import h5py
 import numpy as np
@@ -34,7 +35,12 @@ class LazyList(Sequence[VT]):
     def __len__(self):
         return len(self.list)
 
-    def __getitem__(self, i: int) -> VT:
+    @singledispatchmethod
+    def __getitem__(self, _):
+        raise NotImplementedError()
+
+    @__getitem__.register
+    def _(self, i: int) -> VT:
         item = self.list[i]
         if item is None:
             item = self.list[i] = self._get_func(i)
@@ -66,6 +72,8 @@ import abc
 
 
 class ScanData(abc.ABC):
+    labels: Any
+
     @abc.abstractmethod
     def __init__(self, path: Path | str):
         ...
@@ -80,11 +88,15 @@ class ScanData(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def from_label_path(cls, path: Path) -> ScanData:
+    def from_label_path(cls, path: Path | str) -> ScanData:
         ...
 
     @abc.abstractmethod
     def save_labels(self) -> Path:
+        ...
+
+    @abc.abstractmethod
+    def export_image_stack(self, dest: Path):
         ...
 
 
@@ -139,7 +151,8 @@ class ScanDataHdf5(ScanData):
         return p
 
     @classmethod
-    def from_label_path(cls, p: Path):
+    def from_label_path(cls, p: Path | str):
+        p = Path(p)
         return cls(p.parent / p.name.replace(LABELS_EXT, ".hdf5"))
 
     @property
@@ -173,6 +186,19 @@ class ScanDataHdf5(ScanData):
             f"{self.__class__.__name__}: Label file not found: {self.label_path}"
         )
         return [None] * self.n_areas
+
+    def export_image_stack(self, dest: Path | str):
+        dest = Path(dest)
+        for i in range(self.n_areas):
+            thisdir = dest / str(i + 1)
+            thisdir.mkdir(exist_ok=True, parents=True)
+            for j, img in tqdm(
+                enumerate(self.imgs[i]),
+                desc=f"Area {i}/{self.n_areas}",
+                leave=False,
+                total=len(self.imgs[i]),
+            ):
+                cv2.imwrite(str(thisdir / f"{j:03d}.png"), img)
 
 
 class ScanDataMat(ScanData):
@@ -240,12 +266,19 @@ class ScanDataMat(ScanData):
         return path
 
     @classmethod
-    def from_label_path(cls, p: Path):
+    def from_label_path(cls, p: Path | str):
+        p = Path(p)
         return cls(p.parent / p.name.replace(LABELS_EXT, ".mat"))
+
+    def export_image_stack(self, dest: Path | str):
+        dest = Path(dest)
+        dest.mkdir(exist_ok=True, parents=True)
+        for j, img in tqdm(enumerate(self.imgs), leave=False, total=len(self.imgs)):
+            cv2.imwrite(str(dest / f"{j:03d}.png"), img)
 
 
 class LabelCounts(NamedTuple):
-    count: Counter[str]  # number of ROIs
+    c: Counter[str]  # number of ROIs
     width: Counter[str]  # total width of the label in pixels
 
 
@@ -259,7 +292,7 @@ def count_labels(labels: AREA_LABELS):
             total_width[ll[1]] += abs(round(ll[0][1] - ll[0][0]))
             count[ll[1]] += 1
 
-    return LabelCounts(count=Counter(count), width=Counter(total_width))
+    return LabelCounts(c=Counter(count), width=Counter(total_width))
 
 
 def _merge_neighbours(ls: FRAME_LABEL):
@@ -334,8 +367,6 @@ def shift_x(
 
     flatten = lambda l: sorted(x for ll in l for x in ll)
 
-    from tqdm import tqdm
-
     new_labels: AREA_LABELS = [None] * len(old_labels)
 
     for i, ls in tqdm(enumerate(old_labels), total=len(old_labels), desc="shift_x"):
@@ -357,7 +388,7 @@ import unittest
 
 
 class Test_label_shift(unittest.TestCase):
-    def test_mv_one(self):
+    def test_mv_one(self) -> None:
         # Shift left over
         self.assertEqual(
             mv_one(((0, 10), "a"), dx=-10, xlim=2000), (((1990, 2000), "a"),)
@@ -383,7 +414,7 @@ class Test_label_shift(unittest.TestCase):
             (((1990, 2000), "a"), ((0, 10), "a")),
         )
 
-    def test_merge_neighbours(self):
+    def test_merge_neighbours(self) -> None:
         # No merge. only sort
         inp = [((1990, 2000), "a"), ((0, 10), "a")]
         exp = [((0, 10), "a"), ((1990, 2000), "a")]
@@ -394,7 +425,7 @@ class Test_label_shift(unittest.TestCase):
         exp = [((0, 20), "a")]
         self.assertEqual(list(_merge_neighbours(inp)), exp)
 
-    def test_shift_x(self):
+    def test_shift_x(self) -> None:
         # (y=10, x=20) image
         img1: Final = np.repeat(np.expand_dims(np.arange(20), 0), 10, axis=0)
 
@@ -406,8 +437,8 @@ class Test_label_shift(unittest.TestCase):
 
         offset = 3
         img2 = np.roll(img1, offset)
-        old_label: FRAME_LABEL = [((15, 20), "a")]
-        new_label: FRAME_LABEL = [((0, 3), "a"), ((18, 20), "a")]
+        old_label = [((15, 20), "a")]
+        new_label = [((0, 3), "a"), ((18, 20), "a")]
         self.assertEqual(shift_x([img1], [img2], [old_label]), [new_label])
 
 

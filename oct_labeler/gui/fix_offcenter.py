@@ -68,9 +68,8 @@ class Canvas(QtWidgets.QWidget):
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+R"), self, self.reset)
 
     def update_image(self, image: QImage | np.ndarray):
-        if isinstance(image, np.ndarray):
-            image = qimg_from_np(image)
-        self.image = image
+        qimg = qimg_from_np(image) if isinstance(image, np.ndarray) else image
+        self.image = qimg
         self.setFixedSize(self.image.width(), self.image.height())
         self.txt.setFixedSize(self.image.width(), self.image.height())
 
@@ -167,11 +166,11 @@ class Canvas(QtWidgets.QWidget):
         self.txt.setText(t)
 
     def draw_point(self, qp, c: QPointF):
-        qp.setPen(QPen(Qt.green, 4))
+        qp.setPen(QPen(Qt.GlobalColor.green, 4))
         qp.drawPoint(c)
 
     def draw_circle(self, qp, c: QPointF, r: float):
-        qp.setPen(QPen(Qt.green, 2, Qt.DashLine))
+        qp.setPen(QPen(Qt.GlobalColor.green, 2, Qt.PenStyle.DashLine))
         qp.drawEllipse(c, r, r)
 
     def undo(self):
@@ -200,17 +199,16 @@ class FixOffcenterGui(QtWidgets.QWidget):
         layout.addWidget(self.disp_linear)
         layout.addWidget(self.disp_linear_fix)
 
-        self.disp_circ = None
+        self.disp_circ: Canvas | None = None
         self.circ_scale: float = 0.5
         self.dx = 0.0
         self.dy = 0.0
 
-        self.img_linear = None
-        self.img_linear_fix = None
-        self.img_circ = None
+        self.img_linear: np.ndarray | None = None
+        self.img_circ: np.ndarray | None = None
 
-        self.qimg_linear = None
-        self.qimg_linear_fix = None
+        self.qimg_linear: QImage | None = None
+        self.qimg_linear_fix: QImage | None = None
 
         if image is None:
             btn = QtWidgets.QPushButton()

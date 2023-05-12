@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oct_labeler"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
   "PySide6",
   "pyqtgraph",
@@ -19,7 +19,10 @@ dependencies = [
 [project.scripts]
 oct_labeler = "oct_labeler.cli:cli"
 
-[[tool.mypy.overrides]]
+[tool.setuptools]
+packages = ["oct_labeler"]
+
+[tool.mypy.overrides]
 module = ["cv2.*", "scipy.*", "pyqtgraph.*", "h5py.*", "numba.*"]
 ignore_missing_imports = true
 

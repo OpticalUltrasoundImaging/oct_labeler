@@ -7,12 +7,15 @@ name = "oct_labeler"
 version = "0.10.0"
 dependencies = [
   "PySide6",
-  "pyqtgraph",
-  "numpy",
-  "numba",
-  "scipy",
-  "h5py",
   "click",
+  "h5py",
+  "numba",
+  "numpy",
+  "opencv-python",
+  "pyqtgraph",
+  "scipy",
+  "tqdm",
+  "vispy",
   "PyInstaller; platform_system=='Windows'",
 ]
 
@@ -20,7 +23,7 @@ dependencies = [
 oct_labeler = "oct_labeler.cli:cli"
 
 [tool.setuptools]
-packages = ["oct_labeler"]
+packages = ["oct_labeler", "oct_labeler.gui"]
 
 [tool.mypy.overrides]
 module = ["cv2.*", "scipy.*", "pyqtgraph.*", "h5py.*", "numba.*"]

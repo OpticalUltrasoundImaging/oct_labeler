@@ -8,14 +8,15 @@ from PySide6.QtCore import Qt
 import pyqtgraph as pg
 import numpy as np
 
-from .checkable_list import CheckableList
-from ..data import ScanData, ScanDataMat, ScanDataHdf5, AREA_LABELS
-from .. import __version__
-from ..imgproc import log_compress_par
-from .display_settings_widget import DisplaySettingsWidget
-from .wait_cursor import WaitCursor
+from oct_labeler.gui.checkable_list import CheckableList
+from oct_labeler.gui.display_settings_widget import DisplaySettingsWidget
+from oct_labeler.gui.wait_cursor import WaitCursor
+from oct_labeler.gui.qt_utils import wrap_boxlayout, wrap_groupbox
+from oct_labeler.gui.v3d import get_3d_canvas
 
-from .qt_utils import wrap_boxlayout, wrap_groupbox
+from oct_labeler import __version__
+from oct_labeler.data import ScanData, ScanDataMat, ScanDataHdf5, AREA_LABELS
+from oct_labeler.imgproc import log_compress_par
 
 
 logging.basicConfig(
@@ -113,6 +114,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         time_inc_btn = QtWidgets.QPushButton("&Forward", self)
         time_inc_btn.clicked.connect(lambda: self.imv.jumpFrames(1))
 
+        view_3d_btn = QtWidgets.QPushButton("&View 3D", self)
+        view_3d_btn.clicked.connect(self._view_3d)
+
         export_img_btn = QtWidgets.QPushButton("&Export Image", self)
         export_img_btn.clicked.connect(self._export_image)
         export_img_stack_btn = QtWidgets.QPushButton("Export Image Stack", self)
@@ -128,6 +132,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 [dataselect_label, self.data_select],
                 time_dec_btn,
                 time_inc_btn,
+                view_3d_btn,
                 export_img_btn,
                 export_img_stack_btn,
                 debug_btn,
@@ -139,6 +144,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
                 [dataselect_label, self.data_select],
                 time_dec_btn,
                 time_inc_btn,
+                view_3d_btn,
                 export_img_btn,
                 export_img_stack_btn,
             )
@@ -393,6 +399,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.text_msg.setText("Opened " + self.fname)
 
     @QtCore.Slot()
+    def _view_3d(self) -> None:
+        self.canvas_3d = get_3d_canvas(self._imgs)
+
+    @QtCore.Slot()
     def _export_image(self) -> None:
         # Compute filename
         path = Path.home() / "Desktop"
@@ -410,8 +420,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     @QtCore.Slot()
     def _export_image_stack(self) -> None:
-        # TODO
-        self.oct_data
+        assert self.oct_data is not None
+        path = Path.home() / "Desktop"
+        self.oct_data.export_image_stack(path)
 
     def _after_load_show(self) -> None:
         # show images
@@ -438,7 +449,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         if not self.oct_data:
             return
 
-        assert self._imgs
+        assert self._imgs is not None
         x_max = self._imgs.shape[-1]
 
         if rgn is None:
@@ -516,7 +527,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         """
         if self.oct_data is None:
             return
-        assert self._imgs
+        assert self._imgs is not None
         self._imv_update_linear_regions_from_labels(ind)
 
         if self.disp_settings._warp_disp:

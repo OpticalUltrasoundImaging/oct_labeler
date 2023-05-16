@@ -3,9 +3,9 @@ from PySide6.QtGui import QImage, QPixmap
 import numpy as np
 
 
-from .qt_utils import wrap_boxlayout, wrap_groupbox
-from ..imgproc import polar2cart
-from .fix_offcenter import FixOffcenterGui
+from oct_labeler.gui.fix_offcenter import FixOffcenterGui
+from oct_labeler.gui.qt_utils import wrap_boxlayout, wrap_groupbox
+from oct_labeler.imgproc import polar2cart
 
 
 def qimg_from_np(img: np.ndarray):

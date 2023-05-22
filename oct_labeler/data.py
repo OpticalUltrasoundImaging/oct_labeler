@@ -187,7 +187,7 @@ class ScanDataHdf5(ScanData):
         )
         return [None] * self.n_areas
 
-    def export_image_stack(self, dest: Path | str):
+    def export_image_stack(self, dest: Path | str, ext: str = "png"):
         dest = Path(dest)
         for i in range(self.n_areas):
             thisdir = dest / str(i + 1)
@@ -198,7 +198,7 @@ class ScanDataHdf5(ScanData):
                 leave=False,
                 total=len(self.imgs[i]),
             ):
-                cv2.imwrite(str(thisdir / f"{j:03d}.png"), img)
+                cv2.imwrite(str(thisdir / f"{j:03d}.{ext}"), img)
 
 
 class ScanDataMat(ScanData):

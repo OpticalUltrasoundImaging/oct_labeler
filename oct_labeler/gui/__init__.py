@@ -421,7 +421,18 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
     @QtCore.Slot()
     def _export_image_stack(self) -> None:
         assert self.oct_data is not None
+        name = "stack"
         path = Path.home() / "Desktop"
+        if (path / name).exists():
+            for i in range(10):
+                newpath = path / (name + str(i))
+                if (newpath).exists():
+                    continue
+                else:
+                    path = newpath
+                    break
+        else:
+            newpath = path / name
         self.oct_data.export_image_stack(path)
 
     def _after_load_show(self) -> None:

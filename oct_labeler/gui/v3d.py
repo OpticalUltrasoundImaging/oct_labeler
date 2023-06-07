@@ -5,7 +5,7 @@ from vispy import app, scene, io
 
 def get_3d_canvas(vol: np.ndarray):
     # Prepare canvas
-    canvas = scene.SceneCanvas(keys='interactive', size=(800, 600), show=True)
+    canvas = scene.SceneCanvas(keys="interactive", size=(800, 600), show=True)
 
     # Set up a viewbox to display the image with interactive pan/zoom
     view = canvas.central_widget.add_view()
@@ -19,24 +19,20 @@ def get_3d_canvas(vol: np.ndarray):
     )
 
     # Create and set the camera
-    fov = 60.
-    cam = scene.cameras.TurntableCamera(
-        parent=view.scene,
-        fov=fov,
-        name='Turntable'
-    )
+    fov = 60.0
+    cam = scene.cameras.TurntableCamera(parent=view.scene, fov=fov, name="Turntable")
     view.camera = cam
 
     # # Implement key presses
     # @canvas.events.key_press.connect
     # def on_key_press(event):
-        # if event.text in 'xyzo':
-            # ...
+    # if event.text in 'xyzo':
+    # ...
 
     return canvas
 
-if __name__ == '__main__':
 
-    vol = np.load(io.load_data_file('volume/stent.npz'))['arr_0']
+if __name__ == "__main__":
+    vol = np.load(io.load_data_file("volume/stent.npz"))["arr_0"]
     get_3d_canvas(vol)
     app.run()

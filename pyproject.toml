@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oct_labeler"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
   "PySide6",
   "click",

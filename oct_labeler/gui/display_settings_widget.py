@@ -69,8 +69,8 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
         self._old_dr = default_dr
         self._drange_sb.editingFinished.connect(self._handle_drange_edit_finished)
 
-        self._show_warp = QtWidgets.QPushButton()
-        self._show_warp.setText("Show warp")
+        self._show_radial = QtWidgets.QPushButton()
+        self._show_radial.setText("Show radial")
 
         _log_compression_gb = wrap_groupbox(
             "",
@@ -88,7 +88,7 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
 
         _warp_gb = wrap_groupbox(
             "",
-            self._show_warp,
+            self._show_radial,
             [self._warp_pad_lbl, self._warp_pad_sb],
         )
 
@@ -103,7 +103,7 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
             )
         )
 
-        self._warp_disp = None
+        self._radial_disp = None
 
     @QtCore.Slot()
     def _toggle_log_compression(self, check_state: int):
@@ -123,9 +123,9 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
     @QtCore.Slot()
     def _handle_pad_changed(self):
         pad = self._warp_pad_sb.value()
-        if self._warp_disp:
-            self._warp_disp.pad = pad
-            self._warp_disp.update_img()
+        if self._radial_disp:
+            self._radial_disp.pad = pad
+            self._radial_disp.update_img()
 
     @QtCore.Slot()
     def _handle_fix_offcenter(self):
@@ -141,19 +141,19 @@ class DisplaySettingsWidget(QtWidgets.QGroupBox):
     def getDynamicRange(self) -> int:
         return self._drange_sb.value()
 
-    def show_warp_callback(self, img: np.ndarray | None = None):
+    def show_radial_callback(self, img: np.ndarray | None = None):
         """
         If img give, try to show img in a WarpDisp window.
         If img is None, close the WarpDisp if exists
         """
         if img is not None:
-            if self._warp_disp is None:
-                self._warp_disp = WarpDisp(img)
-                self._warp_disp.pad = self._warp_pad_sb.value()
+            if self._radial_disp is None:
+                self._radial_disp = WarpDisp(img)
+                self._radial_disp.pad = self._warp_pad_sb.value()
             else:
-                self._warp_disp.update_img(img)
-            self._warp_disp.show()
+                self._radial_disp.update_img(img)
+            self._radial_disp.show()
         else:
-            if self._warp_disp is not None:
-                del self._warp_disp
-                self._warp_disp = None
+            if self._radial_disp is not None:
+                del self._radial_disp
+                self._radial_disp = None

@@ -160,7 +160,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.disp_settings.sigDynamicRangeChanged.connect(
             partial(self._toggle_dynamic_range, True)
         )
-        self.disp_settings._show_warp.clicked.connect(self._show_warp_cb)
+        self.disp_settings._show_radial.clicked.connect(self._show_radial_cb)
         self.disp_settings.sigOpenOffcenterGui.connect(
             lambda: self.disp_settings.fix_offcenter_callback(
                 self._imgs[self.imv.currentIndex]
@@ -287,10 +287,10 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.imv.setCurrentIndex(frame_idx)
 
     @QtCore.Slot()
-    def _show_warp_cb(self):
+    def _show_radial_cb(self):
         assert self._imgs is not None
         img = self._imgs[self.imv.currentIndex]
-        self.disp_settings.show_warp_callback(img)
+        self.disp_settings.show_radial_callback(img)
 
     def _area_changed(self, idx: int = 0):
         """
@@ -541,8 +541,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         assert self._imgs is not None
         self._imv_update_linear_regions_from_labels(ind)
 
-        if self.disp_settings._warp_disp:
-            self.disp_settings.show_warp_callback(self._imgs[ind])
+        if self.disp_settings._radial_disp:
+            self.disp_settings.show_radial_callback(self._imgs[ind])
 
     def _imv_copy_last_label(self) -> None:
         """
@@ -703,7 +703,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             return
 
         # close 2nd window showing Warp
-        self.disp_settings.show_warp_callback(None)
+        self.disp_settings.show_radial_callback(None)
 
         return super().closeEvent(event)
 

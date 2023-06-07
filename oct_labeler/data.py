@@ -187,18 +187,24 @@ class ScanDataHdf5(ScanData):
         )
         return [None] * self.n_areas
 
-    def export_image_stack(self, dest: Path | str, ext: str = "png"):
+    def export_image_stack(self, dest: Path | str, ext: str = "tiff", stack=True):
         dest = Path(dest)
-        for i in range(self.n_areas):
-            thisdir = dest / str(i + 1)
-            thisdir.mkdir(exist_ok=True, parents=True)
-            for j, img in tqdm(
-                enumerate(self.imgs[i]),
-                desc=f"Area {i}/{self.n_areas}",
-                leave=False,
-                total=len(self.imgs[i]),
-            ):
-                cv2.imwrite(str(thisdir / f"{j:03d}.{ext}"), img)
+        if stack:
+            assert ext in ("tiff", "tif"), "Only tiff support multiple images."
+            for i in tqdm(range(self.n_areas)):
+                fname = dest / f"{i+1}.{ext}"
+                cv2.imwritemulti(str(fname), self.imgs[i])
+        else:
+            for i in range(self.n_areas):
+                thisdir = dest / str(i + 1)
+                thisdir.mkdir(exist_ok=True, parents=True)
+                for j, img in tqdm(
+                    enumerate(self.imgs[i]),
+                    desc=f"Area {i}/{self.n_areas}",
+                    leave=False,
+                    total=len(self.imgs[i]),
+                ):
+                    cv2.imwrite(str(thisdir / f"{j:03d}.{ext}"), img)
 
 
 class ScanDataMat(ScanData):

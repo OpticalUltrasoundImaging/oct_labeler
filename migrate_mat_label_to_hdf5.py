@@ -1,14 +1,22 @@
 # %%
 from pathlib import Path
-from oct_labeler.data import ScanDataHdf5, shift_x
+from oct_labeler.data import ScanDataMat, ScanDataHdf5, shift_x
+
+# %load_ext autoreload
+# %autoreload 2
 
 root = Path("/media/tnie/TigerDrive/Data/OCT_invivo/")
 root.exists()
 
-old_dir = root / "imgs2"
-new_dir = root / "imgs3"
+old_dir = root / "mat_imgs"
+# new_dir = root / "imgs3"
+new_dir = Path.home() / "code/oct_proc/redata"
 new_dirs = [d for d in new_dir.glob("*") if d.is_dir()]
 
+# %%
+old_dir
+
+# %%
 """
 Iterate through old directories.
 
@@ -19,14 +27,13 @@ For each found label file:
     write label to new label file
 """
 
-for nd in new_dirs:
-    print(nd)
-    new_data = ScanDataHdf5(nd / "areas.hdf5")
-    old_data = ScanDataHdf5(old_dir / nd.name / "areas.hdf5")
+# for nd in new_dirs:
 
-    for area_i in range(new_data.n_areas):
-        new_data.labels[area_i] = shift_x(
-            old_data.imgs[area_i], new_data.imgs[area_i], old_data.labels[area_i]
-        )
+# old_data = ScanDataMat(old_dir / nd.name / "areas.hdf5")
+old_data = ScanDataMat(old_dir / "13 polyp TA/3normal_cut_aligned.mat")
+new_data = ScanDataHdf5(new_dir / "13/areas.hdf5")
+area_i = 2
 
-    new_data.save_labels()
+new_data.labels[area_i] = shift_x(old_data.imgs, new_data.imgs[area_i], old_data.labels)
+
+new_data.save_labels()

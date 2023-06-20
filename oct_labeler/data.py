@@ -343,11 +343,33 @@ def calc_offset_x(a: np.ndarray, b: np.ndarray, yslice=None):
 
 
 def _s(x: int, dx: int, xlim: int):
+    "Shift with wrap around"
     return (round(x) + dx + xlim) % xlim
+
+
+from functools import wraps
+
+
+def trace_fn(f):
+    """
+    A decorator to print the function name and its arguments when its called.
+    """
+
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        s = f"{f.__name__}("
+        s += ", ".join([f"#{i}={x}" for i, x in enumerate(args)])
+        s += ", ".join([f"{k}={v}" for k, v in kwargs.items()])
+        s += ")\n"
+        print(s)
+        return f(*args, **kwargs)
+
+    return wrapper
 
 
 def mv_one(l: ONE_LABEL, dx: int, xlim: int) -> tuple[ONE_LABEL, ...]:
     (x1, x2), name = l
+    assert x1 != x2
     x1, x2 = _s(x1, dx, xlim), _s(x2, dx, xlim)
     if x1 < x2:
         return (((x1, x2), name),)
@@ -355,7 +377,10 @@ def mv_one(l: ONE_LABEL, dx: int, xlim: int) -> tuple[ONE_LABEL, ...]:
         if x2 == 0:
             return (((x1, xlim), name),)
         return (((x1, xlim), name), ((0, x2), name))
-    raise ValueError("x1 == x2")
+    else:  # x1 == x2
+        # The whole span is included, since after shift, one of the
+        # bounds wrapped around to be equal to the other.
+        return (((0, xlim), name),)
 
 
 def shift_x(
@@ -366,9 +391,14 @@ def shift_x(
     """
     Shift x for one scan area.
     """
-    # (n_imgs, y, x)
-    assert old_imgs[0].shape == new_imgs[0].shape
     assert len(old_imgs) == len(new_imgs)
+    # (n_imgs, y, x)
+    if old_imgs[0].shape != new_imgs[0].shape:
+        # migrate mat images of height 625 to HDF5 images of height 624
+        assert old_imgs.shape[1] == 625
+        assert new_imgs.shape[1] == 624
+        old_imgs = old_imgs[:, :624, :]
+
     xlim = old_imgs[0].shape[-1]
 
     flatten = lambda l: sorted(x for ll in l for x in ll)

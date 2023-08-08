@@ -46,6 +46,13 @@ class LazyList(Sequence[VT]):
             item = self.list[i] = self._get_func(i)
         return item
 
+    @__getitem__.register
+    def _(self, s: slice) -> list[VT]:
+        res = []
+        for j in range(*s.indices(len(self.list))):
+            res.append(self[j])
+        return res
+
     def __setitem__(self, i: int, v: VT):
         self.list[i] = v
 

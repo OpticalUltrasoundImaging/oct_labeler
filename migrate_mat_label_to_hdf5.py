@@ -30,10 +30,12 @@ For each found label file:
 # for nd in new_dirs:
 
 # old_data = ScanDataMat(old_dir / nd.name / "areas.hdf5")
-old_data = ScanDataMat(old_dir / "13 polyp TA/3normal_cut_aligned.mat")
-new_data = ScanDataHdf5(new_dir / "13/areas.hdf5")
-area_i = 2
+old_data = ScanDataMat(old_dir / "28 SSP/4_normal_aligned.mat")
+new_data = ScanDataHdf5(new_dir / "28/areas.hdf5")
+area_i = 4 - 1
 
 new_data.labels[area_i] = shift_x(old_data.imgs, new_data.imgs[area_i], old_data.labels)
 
 new_data.save_labels()
+
+# %%

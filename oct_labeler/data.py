@@ -490,7 +490,7 @@ import tempfile
 
 class TestHdf5Data(unittest.TestCase):
     def setUp(self):
-        self.fp = tempfile.NamedTemporaryFile()
+        self.fp = tempfile.NamedTemporaryFile(delete=False)
 
         self.data = [
             {
@@ -512,6 +512,10 @@ class TestHdf5Data(unittest.TestCase):
                 group = hdf5file.create_group(f"areas/{i+1}")
                 for k, v in ds.items():
                     group.create_dataset(k, data=v)
+
+    def tearDown(self) -> None:
+        self.fp.close()
+        return super().tearDown()
 
     def test_hdf5_data(self):
         d = ScanDataHdf5(self.fp.name)

@@ -3,7 +3,7 @@ from typing import Any, Callable, Sequence, Mapping, NamedTuple, TypeVar, Final
 from collections import Counter, defaultdict
 from functools import partial, singledispatchmethod
 from pathlib import Path
-import pickle
+import json
 import logging
 import shutil
 
@@ -24,7 +24,7 @@ AREAS_LABELS = list[AREA_LABELS | None]
 KT = TypeVar("KT")
 VT = TypeVar("VT")
 
-LABELS_EXT = "_labels.pkl"
+LABELS_EXT = "_labels.json"
 
 
 class LazyList(Sequence[VT]):
@@ -153,8 +153,8 @@ class ScanDataHdf5(ScanData):
 
     def save_labels(self):
         p = self.label_path
-        with open(p, "wb") as fp:
-            pickle.dump(self._labels, fp)
+        with open(p, "w") as fp:
+            json.dump(self._labels, fp)
         return p
 
     @classmethod
@@ -186,8 +186,8 @@ class ScanDataHdf5(ScanData):
 
     def load_labels(self) -> AREAS_LABELS:
         if self.label_path.exists():
-            with open(self.label_path, "rb") as fp:
-                return pickle.load(fp)
+            with open(self.label_path, "r") as fp:
+                return json.load(fp)
 
         logging.info(
             f"{self.__class__.__name__}: Label file not found: {self.label_path}"
@@ -251,15 +251,15 @@ class ScanDataMat(ScanData):
 
     def save_labels(self, path=None) -> Path:
         label_path = self.label_path if path is None else path
-        with open(label_path, "wb") as fp:
-            pickle.dump(self.labels, fp)
+        with open(label_path, "w") as fp:
+            json.dump(self.labels, fp)
         return label_path
 
     def load_labels(self) -> AREA_LABELS:
         "Internal helper to load labels"
         if self.label_path.exists():
-            with open(self.label_path, "rb") as fp:
-                return pickle.load(fp)
+            with open(self.label_path, "r") as fp:
+                return json.load(fp)
         logging.info(
             f"{self.__class__.__name__}: Label file not found: {self.label_path}"
         )

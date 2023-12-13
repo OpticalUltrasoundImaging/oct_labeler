@@ -1,5 +1,16 @@
 from __future__ import annotations
-from typing import Any, Callable, Sequence, Mapping, NamedTuple, TypeVar, Final
+from copy import deepcopy
+from typing import (
+    Any,
+    Callable,
+    Sequence,
+    Mapping,
+    NamedTuple,
+    TypeVar,
+    Final,
+    TypedDict,
+    NotRequired,
+)
 from collections import Counter, defaultdict
 from functools import partial, singledispatchmethod
 from pathlib import Path
@@ -14,17 +25,42 @@ import numpy as np
 import cv2
 
 
-RANGE_T = tuple[int, int]  # (1, 1)
-ONE_LABEL = tuple[RANGE_T, str]
-FRAME_LABEL = list[ONE_LABEL]
-AREA_LABELS = list[FRAME_LABEL | None]
-AREAS_LABELS = list[AREA_LABELS | None]
-
-
 KT = TypeVar("KT")
 VT = TypeVar("VT")
 
 LABELS_EXT = "_labels.json"
+
+
+class Label(TypedDict):
+    """
+    Label of an annotation
+    """
+
+    name: str
+    histology: NotRequired[Any]
+    T: NotRequired[Any]
+
+
+Span = tuple[int, int]  # (1, 1)
+
+
+class Annotation(TypedDict):
+    xspan: Span
+    label: Label
+
+
+def annotation_sort_key(a: Annotation):
+    return a["xspan"]
+
+
+FrameLabel = list[Annotation]
+
+
+class AreaLabel(TypedDict):
+    annotations: list[FrameLabel]
+
+
+MultiAreaLabel = dict[str, AreaLabel]
 
 
 class LazyList(Sequence[VT]):
@@ -124,24 +160,23 @@ class ScanDataHdf5(ScanData):
             for k in self._keys:
                 assert k in self._hdf5file["areas"][idx]  # type: ignore
 
-        # labels[area_idx][img_idx]
-        self._labels = self.load_labels()
-
-        def _init_labels(i: int) -> AREA_LABELS:
-            return [None] * len(self.imgs[i])  # type: ignore
-
-        self.labels: LazyList[AREA_LABELS] = LazyList(
-            self.n_areas, _init_labels, self._labels
-        )
-
         self.key = default_key  # default key
         if self.key not in self._keys:
             self.key = self._keys[0]
             logging.info(
                 f"Default key {default_key} not in HDF5 file {hdf5path}. Using {self.key}."
             )
-
         self.imgs = LazyList(self.n_areas, partial(self._get_area, self.key))
+
+        self.labels = self.load_labels()
+
+        # def _init_labels(i: int) -> AreaLabel:
+        # return {"annotations": [[] for _ in range(len(self.imgs[i]))]}
+
+        # self.labels: LazyList[AreaLabel] = LazyList(
+        # self.n_areas, _init_labels, self._labels
+        # )
+        # self.labels = {f"area_{i+1}": _init_labels(i) for i in range(self.n_areas)}
 
     def set_key(self, k: str):
         "Set the key in 'areas/idx/I_img' currently used for self.imgs"
@@ -154,7 +189,7 @@ class ScanDataHdf5(ScanData):
     def save_labels(self):
         p = self.label_path
         with open(p, "w") as fp:
-            json.dump(self._labels, fp)
+            json.dump(self.labels, fp)
         return p
 
     @classmethod
@@ -184,7 +219,7 @@ class ScanDataHdf5(ScanData):
         newh5.close()
         return newpath
 
-    def load_labels(self) -> AREAS_LABELS:
+    def load_labels(self) -> MultiAreaLabel:
         if self.label_path.exists():
             with open(self.label_path, "r") as fp:
                 return json.load(fp)
@@ -192,7 +227,7 @@ class ScanDataHdf5(ScanData):
         logging.info(
             f"{self.__class__.__name__}: Label file not found: {self.label_path}"
         )
-        return [None] * self.n_areas
+        return {}
 
     def export_image_stack(self, dest: Path | str, ext: str = "tiff", stack=True):
         dest = Path(dest)
@@ -255,15 +290,16 @@ class ScanDataMat(ScanData):
             json.dump(self.labels, fp)
         return label_path
 
-    def load_labels(self) -> AREA_LABELS:
+    def load_labels(self) -> AreaLabel:
         "Internal helper to load labels"
         if self.label_path.exists():
             with open(self.label_path, "r") as fp:
                 return json.load(fp)
+
         logging.info(
             f"{self.__class__.__name__}: Label file not found: {self.label_path}"
         )
-        return [None] * len(self.imgs)
+        return {"annotations": [[] for _ in range(len(self.imgs))]}
 
     def update_imgs(self, imgs: np.ndarray):
         self.imgs = imgs
@@ -295,44 +331,41 @@ class LabelCounts(NamedTuple):
     width: Counter[str]  # total width of the label in pixels
 
 
-def count_labels(labels: AREA_LABELS):
+def count_labels(labels: AreaLabel):
     count: defaultdict[str, int] = defaultdict(int)
     total_width: defaultdict[str, int] = defaultdict(int)
-    for l in labels:
+    for l in labels["annotations"]:
         if not l:
             continue
         for ll in l:
-            total_width[ll[1]] += abs(round(ll[0][1] - ll[0][0]))
-            count[ll[1]] += 1
+            span = ll["xspan"]
+            name = ll["label"]["name"]
+            total_width[name] += abs(round(span[1] - span[0]))
+            count[name] += 1
 
     return LabelCounts(c=Counter(count), width=Counter(total_width))
 
 
-def _merge_neighbours(ls: FRAME_LABEL):
-    ls = sorted(ls)
-    prev: ONE_LABEL | None = None
+def _merge_neighbours(ls: FrameLabel):
+    ls = sorted(ls, key=annotation_sort_key)
     prev = ls[0]
     for curr in ls[1:]:
         if prev is None:
             prev = curr
             continue
 
-        prev_r = prev[0]
-        curr_r = curr[0]
-        prev_name = prev[1]
-        curr_name = curr[1]
-
         # If prev and curr have different labels,
         # or if prev and curr don't overlap, return the prev label,
         # and set curr to prev.
-        if prev_name != curr_name or curr_r[0] - prev_r[1] > 1:
+
+        if prev["label"] != curr["label"] or curr["xspan"][0] - prev["xspan"][1] > 1:
             yield prev
             prev = curr
             continue
 
         # Merge prev and curr
-        merged_r = (prev_r[0], curr_r[1])
-        prev = (merged_r, prev[1])
+        merged_span = (prev["xspan"][0], curr["xspan"][1])
+        prev = Annotation(xspan=merged_span, label=prev["label"])
         continue
 
     yield prev
@@ -374,26 +407,30 @@ def trace_fn(f):
     return wrapper
 
 
-def mv_one(l: ONE_LABEL, dx: int, xlim: int) -> tuple[ONE_LABEL, ...]:
-    (x1, x2), name = l
+def mv_one(l: Annotation, dx: int, xlim: int) -> tuple[Annotation, ...]:
+    (x1, x2) = l["xspan"]
+
     assert x1 != x2
     x1, x2 = _s(x1, dx, xlim), _s(x2, dx, xlim)
     if x1 < x2:
-        return (((x1, x2), name),)
+        return (Annotation(xspan=(x1, x2), label=l["label"]),)
     elif x1 > x2:
         if x2 == 0:
-            return (((x1, xlim), name),)
-        return (((x1, xlim), name), ((0, x2), name))
+            return (Annotation(xspan=(x1, xlim), label=l["label"]),)
+        return (
+            Annotation(xspan=(x1, xlim), label=l["label"]),
+            Annotation(xspan=(0, x2), label=l["label"]),
+        )
     else:  # x1 == x2
         # The whole span is included, since after shift, one of the
         # bounds wrapped around to be equal to the other.
-        return (((0, xlim), name),)
+        return (Annotation(xspan=(0, xlim), label=l["label"]),)
 
 
 def shift_x(
     old_imgs: np.ndarray | list[np.ndarray],
     new_imgs: np.ndarray | list[np.ndarray],
-    old_labels: AREA_LABELS,
+    old_labels: AreaLabel,
 ):
     """
     Shift x for one scan area.
@@ -410,19 +447,19 @@ def shift_x(
 
     flatten = lambda l: sorted(x for ll in l for x in ll)
 
-    new_labels: AREA_LABELS = [None] * len(old_labels)
+    new_labels: AreaLabel = deepcopy(old_labels)
 
-    for i, ls in tqdm(enumerate(old_labels), total=len(old_labels), desc="shift_x"):
+    for i, ls in enumerate(tqdm(old_labels["annotations"], desc="shift_x")):
         # per frame
         if ls is not None:
             img1, img2 = old_imgs[i].astype(np.double), new_imgs[i].astype(np.double)
             dx = calc_offset_x(img1, img2)
-            new_labels[i] = flatten(mv_one(l, dx, xlim) for l in ls)
+            new_labels["annotations"][i] = flatten(mv_one(l, dx, xlim) for l in ls)
 
     # merge two labels if they overlap
-    for i, ls in enumerate(new_labels):
+    for i, ls in enumerate(new_labels["annotations"]):
         if ls:
-            new_labels[i] = list(_merge_neighbours(ls))
+            new_labels["annotations"][i] = list(_merge_neighbours(ls))
 
     return new_labels
 
@@ -434,27 +471,42 @@ class Test_label_shift(unittest.TestCase):
     def test_mv_one(self) -> None:
         # Shift left over
         self.assertEqual(
-            mv_one(((0, 10), "a"), dx=-10, xlim=2000), (((1990, 2000), "a"),)
+            mv_one(Annotation(xspan=(0, 10), label={"name": "a"}), dx=-10, xlim=2000),
+            (dict(xspan=(1990, 2000), label={"name": "a"}),),
         )
 
         # Shift left split
         self.assertEqual(
-            mv_one(((0, 20), "a"), dx=-10, xlim=2000),
-            (((1990, 2000), "a"), ((0, 10), "a")),
+            mv_one(Annotation(xspan=(0, 20), label={"name": "a"}), dx=-10, xlim=2000),
+            (
+                Annotation(xspan=(1990, 2000), label={"name": "a"}),
+                (Annotation(xspan=(0, 10), label={"name": "a"})),
+            ),
         )
 
         # Shift right
-        self.assertEqual(mv_one(((0, 10), "a"), dx=10, xlim=2000), (((10, 20), "a"),))
+        self.assertEqual(
+            mv_one(Annotation(xspan=(0, 10), label={"name": "a"}), dx=10, xlim=2000),
+            (Annotation(xspan=(10, 20), label={"name": "a"}),),
+        )
 
         # Shift right over
         self.assertEqual(
-            mv_one(((1990, 2000), "a"), dx=10, xlim=2000), (((0, 10), "a"),)
+            mv_one(
+                Annotation(xspan=(1990, 2000), label={"name": "a"}), dx=10, xlim=2000
+            ),
+            (Annotation(xspan=(0, 10), label={"name": "a"}),),
         )
 
         # Shift right split
         self.assertEqual(
-            mv_one(((1980, 2000), "a"), dx=10, xlim=2000),
-            (((1990, 2000), "a"), ((0, 10), "a")),
+            mv_one(
+                Annotation(xspan=(1980, 2000), label={"name": "a"}), dx=10, xlim=2000
+            ),
+            (
+                Annotation(xspan=(1990, 2000), label={"name": "a"}),
+                Annotation(xspan=(0, 10), label={"name": "a"}),
+            ),
         )
 
     def test_merge_neighbours(self) -> None:
@@ -474,15 +526,24 @@ class Test_label_shift(unittest.TestCase):
 
         offset = 5
         img2 = np.roll(img1, offset)
-        old_label: FRAME_LABEL = [((2, 5), "a")]
-        new_label: FRAME_LABEL = [((2 + offset, 5 + offset), "a")]
-        self.assertEqual(shift_x([img1], [img2], [old_label]), [new_label])
+        old_label: FrameLabel = [Annotation(xspan=(2, 5), label={"name": "a"})]
+        new_label: FrameLabel = [
+            Annotation(xspan=(2 + offset, 5 + offset), label={"name": "a"})
+        ]
+        self.assertEqual(
+            shift_x([img1], [img2], {"annotations": [old_label]}), [new_label]
+        )
 
         offset = 3
         img2 = np.roll(img1, offset)
-        old_label = [((15, 20), "a")]
-        new_label = [((0, 3), "a"), ((18, 20), "a")]
-        self.assertEqual(shift_x([img1], [img2], [old_label]), [new_label])
+        old_label = [Annotation(xspan=(15, 20), label={"name": "a"})]
+        new_label = [
+            Annotation(xspan=(0, 3), label={"name": "a"}),
+            Annotation(xspan=(18, 20), label={"name": "a"}),
+        ]
+        self.assertEqual(
+            shift_x([img1], [img2], {"annotations": [old_label]}), [new_label]
+        )
 
 
 import tempfile

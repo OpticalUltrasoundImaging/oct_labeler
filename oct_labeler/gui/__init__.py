@@ -15,7 +15,15 @@ from oct_labeler.gui.qt_utils import wrap_boxlayout, wrap_groupbox
 from oct_labeler.gui.v3d import get_3d_canvas
 
 from oct_labeler import __version__
-from oct_labeler.data import ScanData, ScanDataMat, ScanDataHdf5, AREA_LABELS
+from oct_labeler.data import (
+    Annotation,
+    AreaLabel,
+    Label,
+    ScanData,
+    ScanDataMat,
+    ScanDataHdf5,
+    Span,
+)
 from oct_labeler.imgproc import log_compress_par
 
 
@@ -27,13 +35,24 @@ logging.getLogger("numba").setLevel(logging.INFO)
 APP_NAME = f"OCT Image Labeler ({__version__})"
 
 LABELS = ["normal", "polyp", "cancer", "scar", "other"]
+
+# list of pairs (name, description)
 POLYP_TYPES = [
     ("TA", "Tubular adenoma"),
     ("TVA", "Tubulovillous adenoma"),
     ("VA", "Villous adenoma"),
     ("HP", "Hyperplastic polyp"),
     ("SSP", "Sessile serrated polyp"),
-    "Adenocarcinoma",
+    ("Adenocarcinoma", "Adenocarcinoma"),
+]
+
+T_GRADES = [
+    "T0",
+    "Tis",
+    "T1",
+    "T2",
+    "T3",
+    "T4",
 ]
 
 pg.setConfigOption("imageAxisOrder", "row-major")
@@ -194,6 +213,8 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         polyp_type_list.itemChanged.connect(_tmp)
 
+        self.t_grade_list = CheckableList(T_GRADES)
+
         def _calc_ListWidget_size(ql: QtWidgets.QListWidget) -> tuple[int, int]:
             height = ql.sizeHintForRow(0) * (ql.count() + 1)
             width = ql.sizeHintForColumn(0) + 10
@@ -201,17 +222,22 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         w1, h1 = _calc_ListWidget_size(self.label_list)
         w2, h2 = _calc_ListWidget_size(polyp_type_list)
+        w3, h3 = _calc_ListWidget_size(self.t_grade_list)
 
-        _max_height = max(h1, h2)
-        _max_width = max(w1, w2)
+        _max_height = max(h1, h2, h3)
+        _max_width = max(w1, w2, w3)
 
         self.label_list.setMaximumHeight(_max_height)
         self.polyp_type_list.setMaximumHeight(_max_height)
+        self.t_grade_list.setMaximumHeight(_max_height)
 
         self.label_list.setMaximumWidth(_max_width)
         self.polyp_type_list.setMaximumWidth(_max_width)
+        self.t_grade_list.setMaximumWidth(_max_width)
+
         self.label_list.setEnabled(False)
         self.polyp_type_list.setEnabled(False)
+        self.t_grade_list.setEnabled(False)
 
         self.labels_gb = wrap_groupbox(
             "Labels",
@@ -236,7 +262,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         # Keep references of line regions for labels
         # so we can remove them from the ViewBox later
-        self.imv_region2label: dict[pg.LinearRegionItem, str] = {}
+        self.imv_region2label: dict[pg.LinearRegionItem, Label] = {}
         self.imv_region2textItem: dict[pg.LinearRegionItem, pg.TextItem] = {}
 
         remove_label_btn.clicked.connect(self._remove_last_clicked_label)
@@ -255,6 +281,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             self.labels_gb,
             self.label_list,
             self.polyp_type_list,
+            self.t_grade_list,
             boxdir="h",
         )
 
@@ -383,7 +410,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
             import traceback
 
             print(e)
-            traceback.print_stack()
+            traceback.print_exc()
             self.error_dialog("Unknown exception while reading file. Check logs.")
             self.status_msg(f"Failed to load {self.fname}")
         else:
@@ -395,6 +422,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self.labels_gb.setEnabled(True)
         self.label_list.setEnabled(True)
         self.polyp_type_list.setEnabled(True)
+        self.t_grade_list.setEnabled(True)
 
         self.text_msg.setText("Opened " + self.fname)
 
@@ -451,7 +479,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
     @QtCore.Slot()
     def _add_label(
-        self, rgn: tuple[int, int] | None = None, label: str | None = None, _dirty=True
+        self, xspan: Span | None = None, label: Label | None = None, _dirty=True
     ):
         """
         To add label without setting self.dirty, pass `_dirty = False` in the parameters
@@ -463,23 +491,27 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         assert self._imgs is not None
         x_max = self._imgs.shape[-1]
 
-        if rgn is None:
-            rgn = (0, x_max // 2)
+        if xspan is None:
+            xspan = (0, x_max // 2)
         else:
-            rgn = int(rgn[0]), int(rgn[1])
+            xspan = int(xspan[0]), int(xspan[1])
 
         if label is None:
-            label = self.label_list.get_checked_str()
-            if not label:
+            label = Label(name=self.label_list.get_checked_str())
+            if not label["name"]:
                 self.error_dialog("Please select a label first")
                 return
 
-            if label == "polyp":
+            if label["name"] == "polyp":
                 _polyp_type = self.polyp_type_list.get_checked_str()
                 if not _polyp_type:
                     self.error_dialog("Please select a polyp type")
                     return
-                label += ";" + _polyp_type
+                label["histology"] = _polyp_type
+
+            t_grade = self.t_grade_list.get_checked_str()
+            if t_grade:
+                label["T"] = t_grade
 
         # print(f"_add_label {rgn=} {label=}")
         if _dirty:
@@ -489,7 +521,7 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         # add LinearRegionItem to represent label region
         lri = LinearRegionItemClickable(
-            values=rgn,
+            values=xspan,
             orientation="vertical",
             bounds=(0, x_max),
             brush=LRI_brush,
@@ -502,8 +534,9 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         viewbox.addItem(lri)
 
         # add text label for LinearRegionItem
-        ti = pg.TextItem(text=label)
-        ti.setPos(rgn[0], 0)
+        label_str = "\n".join((f"{k}: {v}" for k, v in label.items()))
+        ti = pg.TextItem(text=label_str)
+        ti.setPos(xspan[0], 0)
         viewbox.addItem(ti)
 
         self.imv_region2label[lri] = label
@@ -554,17 +587,19 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         ind = self.imv.currentIndex
 
+        labels: AreaLabel
         if isinstance(self.oct_data, ScanDataHdf5):
-            labels: AREA_LABELS = self.oct_data.labels[self.curr_area]  # ref
+            labels = self.oct_data.labels[self.curr_area]  # ref
         elif isinstance(self.oct_data, ScanDataMat):
             labels = self.oct_data.labels  # ref
         else:
             raise ValueError(f"Unknown data type: {self.oct_data}")
 
-        if ind > 0 and labels[ind - 1]:
-            labels[ind] = deepcopy(labels[ind - 1])
-        elif ind < len(labels) - 1 and labels[ind + 1]:
-            labels[ind] = deepcopy(labels[ind + 1])
+        annos = labels["annotations"]
+        if ind > 0 and annos[ind - 1]:
+            annos[ind] = deepcopy(annos[ind - 1])
+        elif ind < len(labels) - 1 and annos[ind + 1]:
+            annos[ind] = deepcopy(annos[ind + 1])
 
         # update display
         self._imv_update_linear_regions_from_labels(ind)
@@ -592,14 +627,17 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self._remove_displayed_linear_regions()
 
         # add current labels from oct_data
+        area_labels: AreaLabel
         if isinstance(self.oct_data, ScanDataHdf5):
-            labels = self.oct_data.labels[self.curr_area][ind]
+            area_labels = self.oct_data.labels[f"area_{self.curr_area+1}"]
+            labels = area_labels["annotations"][ind]
         else:
-            labels = self.oct_data.labels[ind]
+            area_labels = self.oct_data.labels
+            labels = area_labels["annotations"][ind]
 
         if labels:
-            for rgn, label in labels:
-                self._add_label(rgn, label, _dirty=False)
+            for anno in labels:
+                self._add_label(anno["xspan"], anno["label"], _dirty=False)
 
     @QtCore.Slot()
     def _update_curr_label_region(self, lnr_rgn):

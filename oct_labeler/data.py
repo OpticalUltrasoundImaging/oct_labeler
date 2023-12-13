@@ -49,6 +49,10 @@ class Annotation(TypedDict):
     label: Label
 
 
+def make_annotation(span: Span, label: Label):
+    return Annotation(xspan=span, label=label)
+
+
 def annotation_sort_key(a: Annotation):
     return a["xspan"]
 

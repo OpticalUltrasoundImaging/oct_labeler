@@ -16,7 +16,6 @@ from oct_labeler.gui.v3d import get_3d_canvas
 
 from oct_labeler import __version__
 from oct_labeler.data import (
-    Annotation,
     AreaLabel,
     Label,
     ScanData,
@@ -24,6 +23,7 @@ from oct_labeler.data import (
     ScanDataHdf5,
     Span,
 )
+import oct_labeler.data as odata
 from oct_labeler.imgproc import log_compress_par
 
 
@@ -426,6 +426,21 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         self.text_msg.setText("Opened " + self.fname)
 
+    def get_area_label(self) -> AreaLabel:
+        """
+        Get AreaLabel for the currently area.
+        For HDF5 (multi area) this is the currently active area.
+        For Mat (single area), this is just the labels.
+        """
+        area_label: AreaLabel
+        if isinstance(self.oct_data, ScanDataHdf5):
+            area_label = self.oct_data.labels[f"area_{self.curr_area+1}"]
+        elif isinstance(self.oct_data, ScanDataMat):
+            area_label = self.oct_data.labels
+        else:
+            raise ValueError(f"Unknown data type: {self.oct_data}")
+        return area_label
+
     @QtCore.Slot()
     def _view_3d(self) -> None:
         self.canvas_3d = get_3d_canvas(self._imgs)
@@ -587,18 +602,12 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
 
         ind = self.imv.currentIndex
 
-        labels: AreaLabel
-        if isinstance(self.oct_data, ScanDataHdf5):
-            labels = self.oct_data.labels[self.curr_area]  # ref
-        elif isinstance(self.oct_data, ScanDataMat):
-            labels = self.oct_data.labels  # ref
-        else:
-            raise ValueError(f"Unknown data type: {self.oct_data}")
-
+        labels: AreaLabel = self.get_area_label()
         annos = labels["annotations"]
+
         if ind > 0 and annos[ind - 1]:
             annos[ind] = deepcopy(annos[ind - 1])
-        elif ind < len(labels) - 1 and annos[ind + 1]:
+        elif ind < len(annos) - 1 and annos[ind + 1]:
             annos[ind] = deepcopy(annos[ind + 1])
 
         # update display
@@ -627,16 +636,11 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         self._remove_displayed_linear_regions()
 
         # add current labels from oct_data
-        area_labels: AreaLabel
-        if isinstance(self.oct_data, ScanDataHdf5):
-            area_labels = self.oct_data.labels[f"area_{self.curr_area+1}"]
-            labels = area_labels["annotations"][ind]
-        else:
-            area_labels = self.oct_data.labels
-            labels = area_labels["annotations"][ind]
+        area_label: AreaLabel = self.get_area_label()
+        frame_labels = area_label["annotations"][ind]
 
-        if labels:
-            for anno in labels:
+        if frame_labels:
+            for anno in frame_labels:
                 self._add_label(anno["xspan"], anno["label"], _dirty=False)
 
     @QtCore.Slot()
@@ -660,28 +664,18 @@ class AppWin(QtWidgets.QMainWindow, WindowMixin):
         """
         ind = self.imv.currentIndex
 
-        # get labes for this ind
+        # get frame annotations at this ind
         assert self.oct_data is not None
-        if isinstance(self.oct_data, ScanDataHdf5):
-            labels = self.oct_data.labels[self.curr_area][ind]
-        else:
-            labels = self.oct_data.labels[ind]
-
-        if labels is None:
-            if isinstance(self.oct_data, ScanDataHdf5):
-                self.oct_data.labels[self.curr_area][ind] = []
-                labels = self.oct_data.labels[self.curr_area][ind]
-            else:
-                self.oct_data.labels[ind] = []
-                labels = self.oct_data.labels[ind]
-        else:
-            labels.clear()
+        area_label = self.get_area_label()
+        labels = area_label["annotations"][ind]
+        labels.clear()
 
         assert labels is not None
         for lnr_rgn, label in self.imv_region2label.items():
             rgn = lnr_rgn.getRegion()
             rgn = (round(rgn[0]), round(rgn[1]))  # type: ignore
-            labels.append((rgn, label))
+            anno = odata.make_annotation(rgn, label)
+            labels.append(anno)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         match (event.text(), event.isAutoRepeat()):
